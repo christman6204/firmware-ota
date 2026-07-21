@@ -1,0 +1,513 @@
+# STM32 + ESP-07S OTA 系统设计文档
+
+> 生成时间：2026-07-20
+> 状态：设计阶段完成，待选实现起点
+
+---
+
+## 1. 项目背景
+
+| 项目 | 说明 |
+|---|---|
+| 主控 MCU | STM32（裸机/RTOS，固件 < 256KB） |
+| WiFi 模块 | ESP-07S (ESP8266)，作为协处理器 |
+| 主控 ↔ WiFi | UART 连接（460800 或 921600 bps） |
+| 云端 | 阿里云 ECS 服务器 |
+| 设备规模 | >100 台 |
+| 目标 | 通过 Web 页面远程升级 STM32 主控固件 |
+| 安全要求 | 防固件泄露：片外存储 + 传输全程加密（AES-256-CTR + HMAC-SHA256） |
+
+---
+
+## 2. 整体架构
+
+```
+┌──────────────┐   HTTPS      ┌─────────────────────────────┐
+│  Vue3 前端   │ ───────────-> │  FastAPI 后端 (ECS)         │
+│  管理后台    │              │  ├ REST API                  │
+└──────────────┘              │  ├ 任务调度                  │
+                              │  └ MQTT Publisher            │
+                              └──┬──────────┬──────────┬─────┘
+                                 │          │          │
+                          ┌──────▼───┐ ┌────▼────┐ ┌───▼──────┐
+                          │ RDS      │ │  OSS    │ │ MQTT     │
+                          │ MySQL    │ │ 固件存储│ │ Broker   │
+                          └──────────┘ └─────────┘ │(EMQX)    │
+                                                    └────┬─────┘
+                                                         │ MQTT
+                                            ┌────────────┴──────────┐
+                                            │  ESP-07S (管道)        │
+                                            │   ↓ HTTP 流 → UART 流  │
+                                            │  STM32 主控            │
+                                            │   ↓ SPI                │
+                                            │  片外 SPI flash        │
+                                            └───────────────────────┘
+```
+
+### 关键设计选择
+
+1. **ESP-07S 流式转发**（不缓存完整固件）：HTTP 流 → UART 流，纯管道模式
+2. **STM32 App 在线接收**：运行时流式写片外 SPI flash，业务中断时间最短
+3. **片外 SPI flash 中转**：新固件区 + 备份区 + 固件头，支持回滚和断点续传
+4. **Bootloader 集中升级职责**：备份 + 写入 + 回滚都在 Bootloader，App 只收固件 + 触发复位（职责单一，App 代码更简单）
+5. **固件加密防泄露**：AES-256-CTR + HMAC-SHA256，片外 flash 存密文，Bootloader 加解密，所有设备共用主密钥
+
+### 4 阶段 OTA 流程
+
+```
+[阶段1: App 在线接收固件]
+服务器 ──HTTPS 流──> ESP-07S ──UART 流──> STM32 App ──SPI──> 片外 flash
+                                                              ↓
+                                                     收完 + MD5 校验
+                                                              ↓
+                                                     状态: downloaded
+
+[阶段2: 触发升级]
+ESP-07S 发"立即升级" -> App 写标志 -> 软复位（不做备份，备份由 Bootloader 负责）
+
+[阶段3: Bootloader 刷写]
+Bootloader 读标志 -> 备份片内 App 到片外备份区 -> 擦片内 -> 从片外新固件区写片内 -> MD5 校验 -> 跳转
+
+[阶段4: 启动确认]
+新 App 写"app_healthy" -> 通过 ESP-07S 上报结果
+未 healthy 超时 -> Bootloader 下次上电从备份区回滚
+```
+
+---
+
+## 3. 数据库设计 (MySQL)
+
+### `devices` 表
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `device_id` | VARCHAR(64) PK | MAC/SN |
+| `name` | VARCHAR(128) | 设备名 |
+| `group_id` | INT | 分组 ID |
+| `mcu_version` | VARCHAR(32) | STM32 固件版本 |
+| `esp_version` | VARCHAR(32) | ESP-07S 固件版本（预留） |
+| `bootloader_version` | VARCHAR(32) | STM32 Bootloader 版本（只读） |
+| `last_heartbeat` | DATETIME | 最后心跳时间 |
+| `status` | ENUM | online/offline/upgrading |
+| `created_at` | DATETIME | 注册时间 |
+
+### `device_groups` 表
+
+| 字段 | 说明 |
+|---|---|
+| `id`, `name`, `rule`(JSON) | 分组规则（版本/地域过滤） |
+
+### `firmwares` 表
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `id` | INT PK | |
+| `target` | ENUM('mcu','esp') | 目标芯片 |
+| `version` | VARCHAR(32) | 版本号 |
+| `oss_key` | VARCHAR(256) | OSS 对象 key |
+| `file_size` | INT | 字节数 |
+| `iv` | BINARY(16) | AES-CTR 初始向量（每次升级随机） |
+| `hmac` | BINARY(32) | HMAC-SHA256（覆盖 IV + 密文） |
+| `release_notes` | TEXT | 发布说明 |
+| `status` | ENUM | draft/released/archived |
+| `created_at` | DATETIME | |
+
+### `ota_tasks` 表
+
+| 字段 | 说明 |
+|---|---|
+| `id`, `firmware_id`, `name` | |
+| `strategy` | ENUM('all','group','partial') |
+| `target_group_id`, `target_devices`(JSON) | |
+| `batch_size`, `batch_interval_sec` | 批次控制 |
+| `status` | ENUM('pending','running','paused','completed','failed') |
+| `created_at` | |
+
+### `ota_task_records` 表（核心可观测表）
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `id`, `task_id`, `device_id` | | |
+| `status` | ENUM | pending/notified/downloading/downloaded/upgrade_requested/upgrading/success/failed |
+| `download_offset` | INT | 已下载字节数（断点续传可视化） |
+| `upgrade_phase` | VARCHAR(32) | downloading/upgrading/rollback |
+| `progress` | INT(0-100) | |
+| `error_msg` | TEXT | |
+| `started_at`, `finished_at` | DATETIME | |
+
+---
+
+## 4. 后端 API 设计
+
+### 前端管理接口
+
+```
+# 固件管理
+POST   /api/firmwares              # 上传 bin (multipart)
+GET    /api/firmwares              # 列表
+POST   /api/firmwares/{id}/release # 发布
+DELETE /api/firmwares/{id}
+
+# 设备管理
+GET    /api/devices                # 列表（按 version/group/status 过滤）
+GET    /api/devices/{id}           # 详情（含升级历史）
+POST   /api/devices/{id}/group     # 调整分组
+
+# OTA 任务
+POST   /api/ota/tasks              # 创建任务（含策略）
+GET    /api/ota/tasks              # 列表
+GET    /api/ota/tasks/{id}         # 详情（含每设备进度）
+POST   /api/ota/tasks/{id}/pause   # 暂停
+POST   /api/ota/tasks/{id}/cancel  # 取消
+GET    /api/ota/stats              # Dashboard 统计
+```
+
+### 设备端接口
+
+```
+POST   /api/device/register        # 首次上线注册（一机一密）
+POST   /api/device/heartbeat       # 心跳上报（版本/状态）
+GET    /api/device/ota/check       # 主动检查更新（MQTT 丢失兜底）
+GET    /api/ota/download/{token}   # 下载 bin（token 一次性，防盗链，支持 Range）
+POST   /api/device/ota/report      # 上报升级结果
+```
+
+### 鉴权
+
+- 设备端：一机一密（`device_id` + `secret` 烧录到 flash），MQTT username/password 用之
+- 前端：JWT
+
+---
+
+## 5. MQTT 主题设计
+
+```
+ota/cmd/{device_id}                # 下发升级指令（单设备）
+  payload: {"task_id":"...","target":"mcu","version":"1.2.0",
+            "url":"https://oss.../fw.bin?token=...",
+            "iv":"base64...","hmac":"base64...","size":123456}
+
+ota/cmd/group/{group_id}           # 分组广播
+
+device/heartbeat/{device_id}       # 设备心跳（retained）
+device/status/{device_id}          # 状态上报
+device/ota/result/{device_id}      # 升级结果上报
+```
+
+**QoS 1** + 设备主动 `/ota/check` 兜底（每 5min），防 MQTT 丢消息。
+
+---
+
+## 6. 前端页面设计 (Vue3 + Element Plus)
+
+| 页面 | 核心功能 |
+|---|---|
+| **登录页** | JWT 鉴权 |
+| **Dashboard** | 总设备数/在线数/各版本占比/进行中任务 |
+| **固件管理** | 上传弹窗（拖拽 bin + 前端预计算 MD5 + 版本号 + release notes）、列表、发布 |
+| **设备管理** | 表格（搜索/筛选/批量分组）、详情抽屉（版本历史时间线） |
+| **OTA 任务** | 创建向导（4 步：选固件 → 选目标 → 配批次 → 确认）、列表、实时进度看板 |
+| **系统设置** | MQTT/OSS 配置、设备密钥导出 |
+
+**关键组件**：
+- 任务进度看板用 WebSocket（FastAPI 原生支持）实时推送 `ota_task_records` 变化
+- 固件上传用分片 + MD5 前端校验
+- 下载进度显示字节级 offset（配合 `download_offset` 字段）
+
+---
+
+## 7. STM32 端设计
+
+### 7.1 Flash 布局
+
+#### 片内 flash
+
+```
+0x0800_0000  Bootloader  (32KB)   永不升级，出厂烧录
+0x0800_8000  App         (224KB)  OTA 目标
+0x0803_F000  参数区      (4KB)    状态机 + 版本 + 升级标志
+```
+
+#### 片外 SPI flash（如 W25Q64 8MB）
+
+```
+0x00_0000  新固件头     (4KB)    magic + size + IV(16B) + HMAC(32B) + version + receive_offset
+0x00_1000  新固件区     (256KB)  App 接收的待升级固件（密文存储）
+0x04_1000  备份固件头   (4KB)    backup_magic + size + IV(16B) + HMAC(32B) + version
+0x04_2000  备份固件区   (252KB)  升级前自动备份的当前 App（密文存储）
+0x08_2000  保留
+```
+
+### 7.2 App OTA 模块（新增核心）
+
+App 运行时挂一个 OTA 后台任务，主业务不阻塞：
+
+```
+UART DMA 接收 + 空闲中断 -> 解帧 -> OTA 状态机
+
+状态机（存在片内参数区）:
+  IDLE -> DOWNLOADING -> DOWNLOADED -> UPGRADE_REQUESTED -> (软复位)
+  任何阶段失败 -> IDLE + 上报错误
+
+收到固件块 (CMD 0x05):
+  1. 解析 offset + data
+  2. 写片外 flash 对应地址（写前需擦除，按 4KB 扇区管理）
+  3. 更新固件头 receive_offset
+  4. 回 ACK
+
+收到全部完成 (CMD 0x07):
+  1. 读片外固件头 IV + HMAC
+  2. 流式读片外密文 + 计算 HMAC-SHA256(IV || 密文)
+  3. 比对计算值与固件头 HMAC
+  4. 通过: 状态 -> DOWNLOADED, 上报"待升级"
+  5. 失败: 上报错误, 状态 -> IDLE
+
+收到立即升级 (CMD 0x08):
+  1. 状态 -> UPGRADE_REQUESTED
+  2. NVIC_SystemReset() 软复位
+  （备份由 Bootloader 负责，App 不参与 flash 备份逻辑）
+```
+
+**关键实现**：
+- UART 用 DMA + 空闲中断收变长帧，不阻塞主循环
+- 片外 flash 写入按扇区擦除（4KB），维护"已擦除扇区位图"避免重复擦
+- `receive_offset` 每块更新前先写后校验，防掉电丢失
+
+### 7.3 Bootloader（集中升级职责）
+
+Bootloader 不涉及 UART 协议，集中负责备份片内、读片外新固件、写片内、校验、跳转、回滚全流程：
+
+```
+上电:
+  1. 读参数区状态
+  2. if state == UPGRADE_REQUESTED:
+     a. 读片外新固件头: size + IV + HMAC
+     b. 检查片外备份区 magic:
+        - magic 不存在: 备份片内 App (加密备份)
+          * 生成随机备份 IV
+          * 流式: 读片内 App 1KB (明文) -> AES-256-CTR 加密 (主密钥+备份IV) -> 写片外备份区 1KB (密文)
+          * 计算备份 HMAC, 写备份固件头 (backup_magic + size + IV + HMAC + version)
+          * 写 magic
+        - magic 存在: 跳过备份 (上次已备份,这是断电重入)
+     c. 擦除片内 App 区
+     d. 流式解密写入:
+        * 读片外新固件区 1KB 密文
+        * AES-256-CTR 解密 (主密钥 + 新固件头 IV) -> 1KB 明文
+        * 写片内 flash 1KB 明文
+        * 循环
+     e. 整体 HMAC 校验 (重读片外密文, 比对新固件头 HMAC)
+     f. 通过: state = UPGRADING, 写新版本号, 清备份 magic, 跳转
+     g. 失败: 从片外备份区读密文 -> 解密 (备份 IV) -> 写片内明文 -> state = ROLLBACK -> 清备份 magic -> 跳转
+  3. elif state == UPGRADING (上次刚升级完,等 App 确认):
+     - 启动 30s 定时器
+     - App 必须在 30s 内写 "app_healthy" 标志
+     - 超时未 healthy: 从备份区回滚, state = ROLLBACK
+  4. else: 直接跳转 App
+
+跳转 App:
+  SCB->VTOR = 0x08008000;          // 重定位中断向量
+  __set_MSP(*(uint32_t*)0x08008000); // 设置栈指针
+  ((void(*)())(*(uint32_t*)0x08008004))(); // 跳转
+```
+
+### 7.4 固件加密设计
+
+**算法选型**：
+- 加密：AES-256-CTR（流式加密，无需填充，Bootloader 可边读边解密边写）
+- 认证：HMAC-SHA256（覆盖 IV + 密文，防篡改 + 防传输错误）
+- 库：mbedtls（ARM 官方推荐，STM32 Cube 集成良好）
+
+**密钥管理**：
+- 主密钥：AES-256 key (32B) + HMAC-SHA256 key (32B)，共 64B
+- 存储：硬编码在 Bootloader 内部（const 数组，编译进 flash）
+- 所有设备共用同一主密钥（简化部署，接受单点泄露风险）
+- App 不持有密钥（防止 App 被反编译后泄露密钥）
+- 启用 STM32 RDP Level 1 读保护：SWD 不可读 flash，防 Bootloader 被读出
+
+**密文格式**：
+```
+[IV (16B, 每次升级随机)] + [Encrypted Firmware Data] + [HMAC-SHA256 (32B)]
+```
+HMAC 计算范围：`IV || Encrypted_Data`，确保 IV 不可篡改。
+
+**服务器端加密流程**：
+1. 管理员上传明文 bin -> OSS 存明文（私有 bucket）
+2. 创建 OTA 任务时，后端从 OSS 读明文
+3. 生成随机 IV (16B)
+4. AES-256-CTR 加密固件（主密钥 + IV）
+5. 计算 HMAC-SHA256(主密钥, IV || 密文)
+6. 拼接密文 bin：`IV + 密文 + HMAC`
+7. 密文 bin 上传 OSS（独立 key），MQTT 推送 URL 指向密文 bin
+
+**STM32 端加解密职责**：
+| 阶段 | 操作 | 密钥持有者 |
+|---|---|---|
+| App 接收固件块 | UART 收密文 -> 写片外 flash | App 无密钥，纯转发写入 |
+| App 整体校验 | HMAC-SHA256 校验 | App 持有 HMAC key（可省，由 Bootloader 兜底） |
+| Bootloader 升级 | 读片外密文 -> AES 解密 -> 写片内明文 | Bootloader 持有 AES + HMAC key |
+| Bootloader 备份 | 读片内明文 -> AES 加密 -> 写片外密文 | Bootloader 持有 AES + HMAC key |
+| Bootloader 回滚 | 读片外密文 -> AES 解密 -> 写片内明文 | Bootloader 持有 AES + HMAC key |
+
+**性能估算（STM32F1 @72MHz 软件 AES）**：
+- AES-256-CTR 软件实现：~50-80 KB/s
+- HMAC-SHA256 软件实现：~150 KB/s
+- 256KB 加密或解密：3-5s
+- 单次升级增加耗时：6-10s（备份加密 3-5s + 升级解密 3-5s）
+- 总升级时间：约 15-25s（含 UART 传输 + flash 读写），可接受
+
+**安全性分析**：
+- ✓ 片外 flash 是密文：攻击者读片外 flash 无法获取固件
+- ✓ 传输全程加密：HTTPS（外层）+ 固件加密（内层），双重保护
+- ✓ 片内 App 区是明文：但 App 不含密钥，App 被反编译无密钥泄露
+- ✓ Bootloader 含主密钥：RDP Level 1 保护，SWD 不可读
+- ⚠ 剩余风险：主密钥所有设备共用，单设备被深度攻破（如侧信道攻击）则全设备可解密。如需更高安全，未来可升级为每设备一密钥（OTP 存储）
+
+---
+
+## 8. ESP-07S 端设计（流式转发）
+
+ESP-07S 是纯管道，HTTP 流进来一块就 UART 转一块，不在本地缓存：
+
+```cpp
+HTTPClient http;
+WiFiClient *stream = http.getStreamPtr();
+int offset = 0;
+while (offset < total_size) {
+  // 1. 从 HTTP 流读 1KB 到 buffer
+  size_t n = stream->readBytes(buf, 1024);
+
+  // 2. 打包成 UART 帧 CMD 0x05 发送
+  sendFrame(0x05, offset, n, buf);
+
+  // 3. 等 STM32 ACK (带超时 + 重传)
+  if (!waitAck(offset, 3000)) {
+    if (++retry > 3) { reportFailed(); break; }
+    sendFrame(0x05, offset, n, buf);  // 重传
+  }
+
+  offset += n;
+}
+// 4. 发 CMD 0x07 通知完成
+// 5. 发 CMD 0x08 触发升级 (可由后端控制时机)
+```
+
+**断点续传**：
+- 网络中断后 ESP-07S 重连，UART 发 CMD 0x01 查询 STM32 已收 offset
+- STM32 返回固件头里的 `receive_offset`
+- ESP-07S 用 `Range: bytes=offset-` 重新发 HTTP 请求
+- OSS 原生支持 Range
+
+**流控关键**：
+- HTTP 下载速度（几百 KB/s）> UART 转发速度（~80KB/s @921600）
+- ESP-07S 读完一块**主动暂停读** HTTP stream，等 UART ACK 后再读下一块
+- TCP 接收缓冲区会自然 backpressure，不会丢数据
+
+---
+
+## 9. 通信协议（ESP-07S ↔ STM32）
+
+### 帧格式
+
+```
+[0xAA][0x55][LEN_HI][LEN_LO][CMD][DATA...][CRC16_HI][CRC16_LO]
+```
+
+- LEN = CMD + DATA 长度
+- CRC16-Modbus，覆盖 LEN + CMD + DATA
+- UART 速率：460800 或 921600 bps
+
+### 命令表
+
+| CMD | 方向 | 含义 | DATA | 备注 |
+|---|---|---|---|---|
+| 0x01 | ESP→MCU | 查询状态 | - | App 模式响应 |
+| 0x02 | MCU→ESP | 状态应答 | `state + receive_offset + version` | 含断点续传 offset |
+| 0x03 | ESP→MCU | 开始升级 | `task_id + version + size + iv + hmac` | App 进入接收模式 |
+| 0x04 | MCU→ESP | 开始 ACK | `start_offset` | 0 全新 / N 续传 |
+| 0x05 | ESP→MCU | 固件块 | `offset[4] + len[2] + data[N]` | 1KB/块 |
+| 0x06 | MCU→ESP | 块 ACK | `offset + result` | 0=ok/1=crc/2=write_err |
+| 0x07 | ESP→MCU | 传输完成 | - | 触发 STM32 整体校验 |
+| 0x08 | ESP→MCU | 立即升级 | - | App 写标志 + 软复位（备份由 Bootloader 做） |
+| 0x09 | MCU→ESP | 升级结果 | `task_id + result + new_version` | 新 App 启动后发 |
+| 0x0A | MCU→ESP | 心跳 | `state + version` | 60s 一次 |
+
+---
+
+## 10. 关键风险与对策
+
+| 风险 | 对策 |
+|---|---|
+| App 接收时片外 flash 写失败 | 块级 ACK + 重传 3 次；3 次失败整任务标记 failed |
+| HTTP 中断 | ESP-07S 用 Range 续传，从 STM32 查 `receive_offset` |
+| 升级中途断电 | 状态机 + 备份区：UPGRADE_REQUESTED 状态断电后 Bootloader 自动完成或回滚 |
+| App 收固件时主业务阻塞 | UART DMA + 空闲中断异步收；片外 flash 写入用低优先级任务 |
+| UART 流控溢出 | ESP-07S 读一块等 ACK 再读下一块，TCP 自然 backpressure |
+| 新 App 启动失败 | Bootloader 30s 内未收到 `app_healthy` 则从备份区回滚 |
+| 片外 flash 寿命 | 升级不频繁，远低于 10 万次擦写；按 4KB 扇区擦除 |
+| Bootloader 自身砖机 | 不参与 OTA，只通过 SWD 烧录；预留 SWD 测试点 |
+| UART 误码 | 每块 CRC16 + ACK + 重传 3 次；建议加硬件流控 RTS/CTS |
+| ESP-07S 与 STM32 复位时序 | ESP-07S 通过 GPIO 控制 STM32 RESET，避免 UART 丢字节 |
+| 主密钥泄露 | 所有设备固件可解密；启用 STM32 RDP Level 1 读保护，SWD 不可读 flash |
+| 固件加密性能 | STM32F1 软件 AES-256 ~50-80 KB/s，256KB 加解密 3-5s，可接受 |
+
+### 安全
+
+- HTTPS 下载 + 固件 MD5/SHA256 双校验
+- OSS 私有读 + 一次性签名 URL（5 分钟过期）
+- 一机一密，MQTT/HTTP 都校验
+- 可选：固件 ECDSA 签名（防服务器被入侵后植入恶意固件）
+
+### 灰度发布（大规模必备）
+
+- 任务策略支持：全量 / 按分组 / 指定设备列表
+- 批次控制：`batch_size` + `batch_interval_sec`，如每批 10 台间隔 60s
+- 暂停/继续：发现问题可一键暂停
+- 成功率阈值：批次失败率 > 30% 自动暂停告警
+
+---
+
+## 11. 工作量估算
+
+| 模块 | 工作量 | 备注 |
+|---|---|---|
+| STM32 Bootloader | 3-4 天 | 集中升级职责 + AES/HMAC 加解密 |
+| STM32 App OTA 模块 | 3-4 天 | 新增（UART 协议 + 片外 flash + 状态机） |
+| ESP-07S 端 | 2-3 天 | 简化（不缓存，纯流式） |
+| 后端 FastAPI | 4-5 天 | 固件/设备/任务/下载/上报 + MQTT publisher + 加密下发 |
+| 前端 Vue3 | 2-3 天 | 4 个核心页面 |
+| 联调 + 灰度逻辑 | 2-3 天 | |
+| **合计** | **~2-3 周** | 单人 |
+
+---
+
+## 12. 部署架构
+
+| 组件 | 部署位置 |
+|---|---|
+| FastAPI + Uvicorn | 阿里云 ECS，systemd 守护，Nginx 反代 HTTPS |
+| Vue3 前端 | 构建为静态文件，Nginx 托管 |
+| MySQL | 阿里云 RDS（高可用版，自动备份） |
+| OSS | 阿里云 OSS 私有 bucket |
+| MQTT Broker | EMQX 开源版（ECS 自建）或阿里云 MQ for MQTT（托管） |
+| 域名 + SSL | 阿里云域名 + 免费 DV 证书 |
+
+ECS 配置建议：2C4G 起步，MQTT broker 单独一台。
+
+---
+
+## 13. 下一步可选起点
+
+1. **STM32 Bootloader 代码骨架** — Flash 布局 + 读片外 + 写片内 + 跳转 + 回滚
+2. **STM32 App OTA 模块骨架** — UART DMA 收帧 + 片外 flash 读写 + 状态机
+3. **ESP-07S 流式转发骨架** — MQTT 订阅 + HTTP stream → UART 帧分块发送 + 断点续传
+4. **FastAPI 后端 MVP 骨架** — 核心数据模型 + API + MQTT publisher
+5. **片外 flash 驱动骨架** — W25Qxx 扇区管理 + 断点续传 offset 管理
+
+建议推进顺序：
+1. STM32 Bootloader 先行（最硬核，独立可测，用 PC 串口工具模拟）
+2. STM32 App OTA 模块（用 PC 模拟 ESP-07S）
+3. ESP-07S 流式转发（用 PC 起 HTTP 服务）
+4. 后端 MVP
+5. 前端 MVP
+6. 联调
+7. 补企业级能力（分组/批次/灰度/Dashboard/回滚）
