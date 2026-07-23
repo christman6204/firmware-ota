@@ -855,10 +855,11 @@ CREATE STABLE telemetry (
   -- 扩展（冷门/临时字段，后续可 ALTER STABLE 提升为正式列）
   payload    NCHAR(1024)      -- 扩展字段 (JSON)
 ) TAGS (
-  dev_id     INT UNSIGNED,    -- 设备 ID（uint32，出厂烧录）
-  group_id   INT,             -- 分组
-  location   NCHAR(64)        -- 位置
+  dev_id     INT UNSIGNED     -- 设备 ID（uint32）；taosX 从 MQTT topic `data/{dev_id}/telemetry` 提取，不在 JSON body 内
 );
+-- 注：group_id 和 location 属于设备静态元数据，存 MySQL devices 表（§3）；
+--      按组查询时 FastAPI 先查 MySQL 取该组 dev_id 列表，再在 TDengine 中 WHERE dev_id IN (...)。
+--      不放入 TDengine TAG 以避免需要在 JSON 中携带静态数据、及分组变更时的双写同步问题。
 ```
 
 > 当前列表示例覆盖环境 + 电气 + 开关量典型场景，单条序列化约 800~1000 字节。TDengine 列式压缩让 20~30 列也不浪费存储。**这些列名就是 STM32 上报 JSON 的 key**（§18），taosX 按 key=列名直接入库，无需改名。新增列：`ALTER STABLE telemetry ADD COLUMN xxx FLOAT;`，万张子表秒级继承。
@@ -923,7 +924,7 @@ alerts: id, dev_id, rule_id, level, msg, triggered_at, resolved_at
 |---|---|---|
 | STM32 → ESP-07S | `{"ts":1721712000,"temp":25.3,"hum":68.2,"pressure":101.3,"volt_in":220.1,...}` | JSON key = TDengine 列名 |
 | ESP-07S → MQTT | 同上，透传 | 不解析、不转换 |
-| taosX → TDengine | JSON key 与列名一一对应 | 零映射直入 |
+| taosX → TDengine | JSON key 与列名一一对应；TAG `dev_id` 从 MQTT topic `data/{dev_id}/telemetry` 自动提取 | 列：零映射；TAG：topic 提取 |
 | FastAPI → 前端 | `{"ts":"2026-07-23T10:00:00","temp":25.3,"hum":68.2,...}` | 沿用列名 key，前端自行配中文显示标签 |
 
 ### 18.1 测点字段字典（JSON key / TDengine 列）
