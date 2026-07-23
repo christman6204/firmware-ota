@@ -233,7 +233,7 @@ POST   /api/v1/device/ota/report      # 上报升级结果
 ### 鉴权
 
 - 设备端：一机一密（`dev_id` + `secret` 烧录到 flash），MQTT username/password 用之
-- 前端：JWT
+- 前端：JWT（`POST /api/v1/auth/login` 用 username/password 换取 token，后续请求带 `Authorization: Bearer <token>`）
 
 ### 设备认证与自动注册
 
@@ -361,7 +361,7 @@ UART DMA 接收 + 空闲中断 -> 解帧 -> OTA 状态机
 
 收到全部完成 (CMD 0x07):
   1. 校验 receive_offset == 固件头 size（blob 完整落盘）
-  2. 通过: 状态 -> DOWNLOADED, 上报"待升级"
+  2. 通过: 状态 -> DOWNLOADED, STM32 回 ACK 给 ESP；ESP 随后经 MQTT device/ota/progress 上报"待升级"到云端
   3. 失败: 上报错误, 状态 -> IDLE
   （HMAC-SHA256 密码学校验由 Bootloader 在阶段3 负责，App 不持有密钥）
 
@@ -447,7 +447,7 @@ Bootloader 不涉及 UART 协议，集中负责备份片内、读片外新固件
 HMAC 计算范围：`IV || Encrypted_Data`，确保 IV 不可篡改。
 
 **服务器端加密流程**（发布时加密一次，blob 按版本复用）：
-1. 管理员上传明文 bin（可选留存明文到 OSS 私有 bucket 供审计/重新加密）
+1. 管理员上传明文 bin → 服务端存入 OSS 私有 bucket（明文留存，供后续审计/重新加密；同时前端可用于下载校验，见 §4）
 2. **发布固件时**，后端读明文
 3. 生成随机 IV (16B) —— 每个固件版本仅生成一次
 4. AES-256-CTR 加密固件（主密钥 + IV）
@@ -490,8 +490,8 @@ ESP-07S 上电后按以下顺序初始化（任何一步失败则重试，重试
 
 ```
 1. 连接 WiFi（SSID/密码**产线烧录**到 ESP flash，与 dev_id+secret 同一批次预置）
-2. 连接 MQTT broker（地址/端口在固件中硬编码为 DNS 域名，如 mqtt.example.com:8883）
-3. 以 dev_id + secret 做 MQTT CONNECT 认证（§4 鉴权）
+2. 连接 MQTT broker（地址/端口**产线烧录**到 ESP flash 中的 DNS 域名，如 mqtt.example.com:8883）
+3. 以 dev_id + secret 做 MQTT CONNECT 认证（详见 §4 设备认证与自动注册）
 4. 订阅主题：ota/cmd/{dev_id}（QoS 1）、cmd/{dev_id}/config（QoS 1）
 5. 发布 device/heartbeat/{dev_id}（payload: `{"state":"booting","version":"0.0.0"}`）宣告上线——此时 ESP 尚未从 STM32 收到心跳帧，state/version 用占位符；STM32 随后发来 CMD 0x0A 心跳后，ESP 转发到同一 topic 并载入真实值
 6. 进入主循环：UART 收帧 → 按 CMD 分发处理
@@ -590,8 +590,8 @@ while (offset < total_size) {
 
 OTA 块传输（0x05/0x06）、数据上报（0x10/0x11）、心跳（0x0A）、配置（0x12/0x13）**共用同一条 UART**，需避免帧交织错乱：
 
-- **OTA 优先，期间暂停周期上报**：进入 OTA 下载（DOWNLOADING）后，STM32 暂停 5s 数据上报与 60s 心跳，OTA 结束（成功/失败回 IDLE）后恢复。OTA 仅 15-25s，错过几条遥测可接受，且 `upgrading` 状态下 5min 离线阈值不会误触发。
-- **两端均按 CMD 分发的非阻塞帧调度**：接收方按帧头 `CMD` 路由到对应处理器，**不硬等某一特定 CMD**；即使在等 0x06 ACK 时收到 0x10 数据帧，也能正确转发后再继续等 ACK。帧自同步（AA 55 + LEN + CRC），天然可解复用。
+- **主机制：OTA 优先，暂停周期上报**（推荐，简单可靠）：进入 OTA 下载（DOWNLOADING）后，STM32 主动暂停 5s 数据上报与 60s 心跳，OTA 结束（成功/失败回 IDLE）后恢复。OTA 仅 15-25s，错过几条遥测可接受，且 `upgrading` 状态下 5min 离线阈值不会误触发。
+- **防御式回退：按 CMD 分发的非阻塞帧调度**：即使暂停机制失效（如 STM32 未及时停止上报），两端帧解析器按帧头 `CMD` 路由到对应处理器，**不硬等某一特定 CMD**；即使在 OTA 块传输中间收到 0x10 数据帧，也能正确转发后再继续等 ACK。帧自同步（AA 55 + LEN + CRC），天然可解复用，不会因意外交织帧而死锁。
 
 ---
 
@@ -1157,7 +1157,7 @@ D:\claude\514\
 | STM32 data_report | PC 串口工具模拟 ESP-07S，验证帧格式 + JSON + CRC | 串口助手 + Python |
 | ESP-07S data_forwarder | PC 起 MQTT broker + 串口发帧，验证 publish | Mosquitto |
 | 后端 telemetry API | 单元测试 + httpx 集成测试 | pytest |
-| EMQX → TDengine | MQTT 客户端模拟设备并发上报，逐步加压至满量程（10,000 设备 / 2,000 条每秒） | paho-mqtt + 压力脚本 |
+| EMQX → TDengine | MQTT 客户端模拟设备并发上报，逐步加压至满量程（10,000 设备 / 2,000 条每秒）；单进程上限不足时使用多进程或分布式压测 | paho-mqtt + Python / locust 等 |
 | 前端 | Vitest 组件测试 + Playwright E2E | Vitest / Playwright |
 | 端到端 | 1-5 台真实设备验证完整链路 | 真实硬件 |
 
