@@ -37,6 +37,17 @@
 - 芯片保护：STM32 RDP Level 1 读保护
 - 设备认证：一机一密（MQTT/HTTP）
 
+### 1.4 设备出厂预置（Provisioning）
+
+**方案 C — 产线批量预配置**：每台设备出厂前由产线工具一次性烧录以下信息到芯片 flash，出厂即可联网上线，无需现场配网：
+
+| 烧录目标 | 内容 |
+|---|---|
+| STM32 片内 flash（参数区/App） | `dev_id`（uint32）、`secret`（16B，派生自 `HMAC(master_device_key, dev_id)`）、Bootloader 主密钥（AES+HMAC 共 64B，所有设备相同） |
+| ESP-07S flash | WiFi SSID/密码、MQTT broker 地址（DNS 域名）、`dev_id` + `secret`（同 STM32，供 MQTT 认证和 topic 拼接） |
+
+> `dev_id` 的权威持有者是 STM32，ESP 持有产线烧录的副本仅用于 MQTT 连接认证。两者同批预置、应一致。secret 由服务端主设备密钥按 `HMAC-SHA256(master_device_key, dev_id)` 派生，服务端不存每设备明文 secret（验证时重算比对）。
+
 ---
 
 ## 2. OTA 系统架构
@@ -462,7 +473,7 @@ HMAC 计算范围：`IV || Encrypted_Data`，确保 IV 不可篡改。
 ESP-07S 上电后按以下顺序初始化（任何一步失败则重试，重试间隔递增，最大 60s）：
 
 ```
-1. 连接 WiFi（SSID/密码由 provisioning 提供，机制待定，见 E1）
+1. 连接 WiFi（SSID/密码**产线烧录**到 ESP flash，与 dev_id+secret 同一批次预置）
 2. 连接 MQTT broker（地址/端口在固件中硬编码为 DNS 域名，如 mqtt.example.com:8883）
 3. 以 dev_id + secret 做 MQTT CONNECT 认证（§4 鉴权）
 4. 订阅主题：ota/cmd/{dev_id}（QoS 1）、cmd/{dev_id}/config（QoS 1）
@@ -1001,7 +1012,7 @@ UART 收帧 → 校验 CRC16 → 从帧头读 dev_id(4B) → 提取 JSON
          → mqttClient.publish(data/{dev_id}/telemetry, JSON) → 返回 ACK
 ```
 
-> ESP-07S **不持有设备身份**：dev_id 每帧由 STM32 携带，ESP 只是临时从帧头读出用于拼 MQTT topic，转发完即弃，无需 provision 任何 ID。JSON 内容 ESP 不解析、原样透传。
+> ESP-07S **持有产线烧录的 dev_id + secret 副本**（供 MQTT CONNECT 认证和 topic 拼接使用），但不独立产生/管理身份：身份的**权威持有者是 STM32**（每帧 UART header 带的 dev_id 才是规范的），两者产线同批烧录，应一致。ESP 转发时从帧头读 dev_id 拼 MQTT topic，JSON 内容不解析、原样透传。
 
 改动：新建 `data_forwarder.cpp`（~50 行）。
 
