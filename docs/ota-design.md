@@ -43,7 +43,9 @@
 
 | 烧录目标 | 内容 |
 |---|---|
-| STM32 片内 flash（参数区/App） | `dev_id`（uint32）、`secret`（16B，取 `HMAC-SHA256(master_device_key, dev_id)` 前 16 字节）、Bootloader 主密钥（AES+HMAC 共 64B，所有设备相同） |
+| STM32 片内 flash — 参数区 | `dev_id`（uint32）—— 参数区掉电保持、OTA 不擦除，确保固件升级后身份不丢 |
+| STM32 片内 flash — Bootloader 区 | 主密钥（AES+HMAC 共 64B，所有设备相同，RDP Level 1 保护） |
+| ESP-07S flash | WiFi SSID/密码、MQTT broker 地址（DNS 域名）、`dev_id` + `secret`（16B，取 `HMAC-SHA256(master_device_key, dev_id)` 前 16 字节；供 MQTT 认证和 topic 拼接） |
 | ESP-07S flash | WiFi SSID/密码、MQTT broker 地址（DNS 域名）、`dev_id` + `secret`（同 STM32，供 MQTT 认证和 topic 拼接） |
 
 > `dev_id` 的权威持有者是 STM32，ESP 持有产线烧录的副本仅用于 MQTT 连接认证。两者同批预置、应一致。secret 由服务端主设备密钥按 `HMAC-SHA256(master_device_key, dev_id)` 派生，服务端不存每设备明文 secret（验证时重算比对）。
@@ -314,6 +316,7 @@ device/config/ack/{dev_id}      # 配置下发结果上报（ESP 收到 STM32 CM
 ```c
 typedef struct {
   uint32_t magic;           // 0x5041524D ("PARM")，参数区有效标志
+  uint32_t dev_id;          // 设备 ID（uint32，出厂烧录；必须存参数区而非仅 App 内，否则 OTA 替换 App 后丢失身份）
   uint8_t  state;           // OTA 状态机: IDLE/DOWNLOADING/DOWNLOADED/UPGRADE_REQUESTED/UPGRADING
   uint8_t  app_healthy;     // 启动确认标志（新 App 启动成功后置 1）
   uint8_t  upgrade_flag;    // 触发 Bootloader 升级标志
