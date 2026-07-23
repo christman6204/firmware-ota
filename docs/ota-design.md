@@ -88,7 +88,7 @@
 ESP-07S 发"立即升级" -> App 写标志 -> 软复位（不做备份，备份由 Bootloader 负责）
 
 [阶段3: Bootloader 刷写]
-Bootloader 读标志 -> 备份片内 App 到片外备份区 -> 擦片内 -> 从片外新固件区解密写片内 -> HMAC-SHA256 校验 -> 跳转
+Bootloader 读标志 -> 先校验新固件 HMAC（verify-before-write，失败则不动片内、保留当前 App）-> 备份片内 App 到片外备份区 -> 擦片内 -> 解密写片内 -> 跳转
 
 [阶段4: 启动确认]
 新 App 写"app_healthy" -> 通过 ESP-07S 上报结果
@@ -201,7 +201,7 @@ POST   /api/v1/device/ota/report      # 上报升级结果
 
 > **心跳主路径是 MQTT，不是 HTTP**：STM32 每 60s 经 UART CMD 0x0A 发心跳 → ESP-07S publish 到 `device/heartbeat/{dev_id}`（§5）→ EMQX 规则引擎更新 `devices.last_seen`（§15.3）。`POST /api/v1/device/heartbeat` 仅作 MQTT 长时间不可用时的 HTTP 兜底上报，两者更新的是同一个 `last_seen` 字段，不重复计时。
 
-> **固件下载（直连 OSS）**：固件字节流**不经过 FastAPI**。后端生成 OSS 一次性签名 URL（5min 过期）随 MQTT 下发（或在 `/ota/check` 返回），ESP-07S 直接从 OSS 拉流，OSS 原生支持 Range 断点续传。FastAPI 不经手固件内容，仅负责签发 URL 与接收结果上报，避免万级并发下载压垮单台 ECS。（注：此处"直连 OSS"是下载路径决策，与 §7.1 的"方案 A"blob 存储约定是两件独立的事。）
+> **固件下载（直连 OSS）**：固件字节流**不经过 FastAPI**。后端生成 OSS 限时签名 URL（5min 过期，期内可多次 Range 请求）随 MQTT 下发（或在 `/ota/check` 返回），ESP-07S 直接从 OSS 拉流，OSS 原生支持 Range 断点续传。FastAPI 不经手固件内容，仅负责签发 URL 与接收结果上报，避免万级并发下载压垮单台 ECS。（注：此处"直连 OSS"是下载路径决策，与 §7.1 的"方案 A"blob 存储约定是两件独立的事。）
 
 ### 鉴权
 
@@ -221,9 +221,13 @@ ota/cmd/{dev_id}                # 下发升级指令（单设备）
 ota/cmd/group/{group_id}           # 分组广播
 
 device/heartbeat/{dev_id}       # 设备心跳（retained）
-device/status/{dev_id}          # 状态上报
-device/ota/result/{dev_id}      # 升级结果上报
+device/status/{dev_id}          # 通用状态上报（在线/版本等）
+device/ota/progress/{dev_id}    # OTA 进度上报（下载/升级过程中周期性）
+  payload: {"task_id":"...","state":"downloading","download_offset":123456,"progress":56}
+device/ota/result/{dev_id}      # 升级最终结果上报（success/failed）
 ```
+
+> **OTA 进度回传**：下载/升级过程中，ESP-07S 周期性（如每收 N 个块或每秒，取较疏者）publish `device/ota/progress/{dev_id}`，携带 `task_id + state + download_offset + progress`。云端（FastAPI 订阅或 EMQX 规则引擎）据此更新 `ota_task_records` 的 `download_offset/progress/status`，驱动 §6 实时进度看板。`download_offset` 由 ESP 从 HTTP 下载进度取得（STM32 写入进度经 CMD 0x06 ACK 的 offset 回传）。最终成败经 `device/ota/result`（对应 CMD 0x09）上报。
 
 **QoS 1** + 设备主动 `/ota/check` 兜底（每 5min），防 MQTT 丢消息。
 
@@ -344,7 +348,10 @@ Bootloader 不涉及 UART 协议，集中负责备份片内、读片外新固件
         * IV    = 新固件区[0 : 16]            # blob 首 16B
         * HMAC  = 新固件区[size-32 : size]    # blob 末 32B
         * 密文  = 新固件区[16 : size-32]
-     b. 检查片外备份区 magic:
+     b. 【先验签 verify-before-write】流式读 blob [IV + 密文]，增量算 HMAC-SHA256，比对 blob 末 32B：
+        * 失败 -> 片内 flash 未动（当前 App 完好），上报"固件校验失败"，state = IDLE，跳转当前 App（无需回滚）
+        * 通过 -> 继续
+     c. 验签通过后，检查片外备份区 magic:
         - magic 不存在: 备份片内 App (加密备份)
           * 生成随机备份 IV
           * 流式: 读片内 App 1KB (明文) -> AES-256-CTR 加密 (主密钥+备份IV) -> 写片外备份区 1KB (密文)
@@ -352,15 +359,15 @@ Bootloader 不涉及 UART 协议，集中负责备份片内、读片外新固件
           * 写备份固件头 (backup_magic + size + version)
           * 写 magic
         - magic 存在: 跳过备份 (上次已备份,这是断电重入)
-     c. 擦除片内 App 区
-     d. 流式解密写入:
+     d. 擦除片内 App 区
+     e. 流式解密写入:
         * 读新固件区 1KB 密文 (从偏移 16 开始)
         * AES-256-CTR 解密 (主密钥 + 新固件区 IV) -> 1KB 明文
         * 写片内 flash 1KB 明文
         * 循环
-     e. 整体 HMAC 校验 (重读新固件区 blob [IV + 密文], 计算并比末 32B HMAC)
-     f. 通过: state = UPGRADING, 写新版本号, 清备份 magic, 启动 IWDG(30s), 跳转
-     g. 失败: 从备份区读密文 blob -> 解密 (备份 IV, 在备份区[0:16]) -> 写片内明文 -> state = IDLE -> 跳转
+        * 写入失败 -> 从备份区读密文 blob -> 解密 (备份 IV, 在备份区[0:16]) -> 写片内明文 -> state = IDLE -> 跳转
+     f. 全部成功: state = UPGRADING, new_version 移入 cur_version, 清备份 magic, 启动 IWDG(30s), 跳转
+     （验签已在 b 前置完成；c~e 任一步掉电，重启后从 b 重新验签→续做，全程幂等）
   3. elif state == UPGRADING (上次刚升级完,等 App 确认):
      - Bootloader 跳转前已启动 IWDG 独立看门狗 (30s)
      - 新 App 正常启动后写 "app_healthy" 标志并喂狗; Bootloader 不再运行
@@ -415,7 +422,7 @@ HMAC 计算范围：`IV || Encrypted_Data`，确保 IV 不可篡改。
 |---|---|---|
 | App 接收固件块 | UART 收密文 blob 字节 -> 原样写片外固件区 | App 无密钥，纯转发写入 |
 | App 接收完成 | `receive_offset == size` 完整性校验（非密码学） | App 无密钥 |
-| Bootloader 升级 | 读固件区 blob：IV(首16B)+HMAC(末32B) 校验，密文区解密写片内明文 | Bootloader 持有 AES + HMAC key |
+| Bootloader 升级 | **先校验** blob HMAC（IV 首16B + 末32B），**通过后才**解密写片内明文（verify-before-write） | Bootloader 持有 AES + HMAC key |
 | Bootloader 备份 | 读片内明文 -> AES 加密 -> 拼备份 blob 写备份区 | Bootloader 持有 AES + HMAC key |
 | Bootloader 回滚 | 读备份区 blob：IV+HMAC 校验，密文区解密写片内明文 | Bootloader 持有 AES + HMAC key |
 
@@ -467,11 +474,14 @@ while (offset < total_size) {
 - STM32 返回固件头里的 `receive_offset`（= 固件区已写 blob 字节数）
 - ESP-07S 用 `Range: bytes=receive_offset-` 重新发 HTTP 请求（即固件区写入偏移 = HTTP 下载偏移 = receive_offset）
 - OSS 原生支持 Range
+- 若签名 URL 已过期（断网 >5min），ESP 先经 `GET /api/v1/device/ota/check`（§4）重新换取签名 URL，再 Range 续传
 
 **流控关键**：
 - HTTP 下载速度（几百 KB/s）> UART 转发速度（~80KB/s @921600）
 - ESP-07S 读完一块**主动暂停读** HTTP stream，等 UART ACK 后再读下一块
 - TCP 接收缓冲区会自然 backpressure，不会丢数据
+
+**进度上报**：下载过程中 ESP-07S 周期性 publish `device/ota/progress/{dev_id}`（task_id + 当前 offset + progress），供云端刷新 `ota_task_records` 与进度看板（§5）。
 
 ---
 
@@ -516,8 +526,15 @@ while (offset < total_size) {
 | 0x0A | MCU→ESP | 心跳 | `state[1] + version[1+N]` | 60s 一次 |
 | 0x10 | MCU→ESP | 数据上报 | `dev_id[4] + JSON[...]` | §20 数据采集 |
 | 0x11 | ESP→MCU | 数据上报 ACK | `result[1]` | 0=ok/1=fail |
-| 0x12 | ESP→MCU | 配置下发 | `json_len[2] + config_json[...]` | 云端 `cmd/{dev_id}/config` 透传，如 `{"report_interval_ms":10000}` |
+| 0x12 | ESP→MCU | 配置下发 | `json_len[2] + config_json[...]` | 云端 `cmd/{dev_id}/config` 透传，或 ESP 自主 NTP 校时（§20.2），如 `{"report_interval_ms":10000}` / `{"rtc_sync":<unix_ts>}` |
 | 0x13 | MCU→ESP | 配置 ACK | `result[1]` | 0=ok/1=parse_err/2=unsupported |
+
+### UART 复用与并发
+
+OTA 块传输（0x05/0x06）、数据上报（0x10/0x11）、心跳（0x0A）、配置（0x12/0x13）**共用同一条 UART**，需避免帧交织错乱：
+
+- **OTA 优先，期间暂停周期上报**：进入 OTA 下载（DOWNLOADING）后，STM32 暂停 5s 数据上报与 60s 心跳，OTA 结束（成功/失败回 IDLE）后恢复。OTA 仅 15-25s，错过几条遥测可接受，且 `upgrading` 状态下 5min 离线阈值不会误触发。
+- **两端均按 CMD 分发的非阻塞帧调度**：接收方按帧头 `CMD` 路由到对应处理器，**不硬等某一特定 CMD**；即使在等 0x06 ACK 时收到 0x10 数据帧，也能正确转发后再继续等 ACK。帧自同步（AA 55 + LEN + CRC），天然可解复用。
 
 ---
 
@@ -544,7 +561,7 @@ while (offset < total_size) {
 ### 安全
 
 - HTTPS 下载（传输层）+ 固件 HMAC-SHA256 校验（内容层，Bootloader 执行）
-- OSS 私有读 + 一次性签名 URL（5 分钟过期）
+- OSS 私有读 + **限时**签名 URL（5 分钟过期，期内允许**多次 Range 请求**以支持断点续传；非"单次请求即失效"）
 - 一机一密，MQTT/HTTP 都校验
 - 可选：固件 ECDSA 签名（防服务器被入侵后植入恶意固件）
 
@@ -705,7 +722,7 @@ ECS 配置建议：**4C8G** 起步（EMQX + TDengine + FastAPI + Nginx 同机）
 告警规则存储在 MySQL `alert_rules` 表中，由 **FastAPI 后台定时任务** 周期性评估（10-30s 可配）：
 
 1. 从 MySQL 读取所有启用的告警规则
-2. 对每条规则，从 TDengine 查询 `SELECT count(*) FROM telemetry WHERE dev_id = ? AND ts > NOW - <duration> AND temp > <threshold>`
+2. 对每条规则，从 TDengine 查询 `SELECT count(*) FROM telemetry WHERE dev_id = ? AND ts > NOW - <duration> AND <metric> > <threshold>`（`<metric>` 取自该规则的 `alert_rules.metric` 字段，如 `temp`）
 3. 判断触发：over_cnt ≥ 应有采样数 × 容忍比例 → 写入 alerts 表 + 推送 MQTT 通知
 4. 未触发且之前是告警态 → 自动恢复，更新 resolved_at
 
@@ -758,7 +775,7 @@ CREATE STABLE telemetry (
   -- 电气量
   volt_in    FLOAT,          -- 输入电压 (V)
   volt_out   FLOAT,          -- 输出电压 (V)
-  current    FLOAT,          -- 电流 (A)
+  current_a  FLOAT,          -- 电流 (A)，列名避开 SQL 保留字 current
   power      FLOAT,          -- 功率 (W)
   energy     FLOAT,          -- 累计电量 (kWh)
   freq       FLOAT,          -- 电网频率 (Hz)
@@ -856,7 +873,7 @@ alerts: id, dev_id, rule_id, level, msg, triggered_at, resolved_at
 | `pressure` | 气压 | hPa |
 | `volt_in` | 输入电压 | V |
 | `volt_out` | 输出电压 | V |
-| `current` | 电流 | A |
+| `current_a` | 电流 | A |
 | `power` | 功率 | W |
 | `energy` | 累计电量 | kWh |
 | `freq` | 电网频率 | Hz |
@@ -1009,7 +1026,7 @@ RDS MySQL (现有，复用) ─── 设备/用户/OTA 元数据
 OSS (现有，复用)        ─── OTA 固件包
 ```
 
-不需要新增云资源，仅现有 ECS 上安装 TDengine 开源版。
+不需新增**独立** ECS 实例，但现有 ECS 需升配至 4C8G 并挂载 2TB 数据盘（见 §12），再安装 TDengine 开源版。
 
 ### 22.2 成本对比
 
@@ -1076,7 +1093,7 @@ D:\claude\514\
 | STM32 data_report | PC 串口工具模拟 ESP-07S，验证帧格式 + JSON + CRC | 串口助手 + Python |
 | ESP-07S data_forwarder | PC 起 MQTT broker + 串口发帧，验证 publish | Mosquitto |
 | 后端 telemetry API | 单元测试 + httpx 集成测试 | pytest |
-| EMQX → TDengine | MQTT 客户端模拟 1000 设备并发上报 | paho-mqtt + 压力脚本 |
+| EMQX → TDengine | MQTT 客户端模拟设备并发上报，逐步加压至满量程（10,000 设备 / 2,000 条每秒） | paho-mqtt + 压力脚本 |
 | 前端 | Vitest 组件测试 + Playwright E2E | Vitest / Playwright |
 | 端到端 | 1-5 台真实设备验证完整链路 | 真实硬件 |
 
