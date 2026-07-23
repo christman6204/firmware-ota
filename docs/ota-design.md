@@ -39,7 +39,9 @@
 
 ---
 
-## 2. 整体架构
+## 2. OTA 系统架构
+
+> 数据平台架构见 Part B §15。两套系统共用 ECS / EMQX / MySQL / Vue3 基础设施。
 
 ```
 ┌──────────────┐   HTTPS      ┌─────────────────────────────┐
@@ -56,7 +58,7 @@
                                                     └────┬─────┘
                                                          │ MQTT
                                             ┌────────────┴──────────┐
-                                            │  ESP-07S (管道)        │
+                                            │  ESP-07S (透明桥接)    │
                                             │   ↓ HTTP 流 → UART 流  │
                                             │  STM32 主控            │
                                             │   ↓ SPI                │
@@ -78,7 +80,7 @@
 [阶段1: App 在线接收固件]
 服务器 ──HTTPS 流──> ESP-07S ──UART 流──> STM32 App ──SPI──> 片外 flash
                                                               ↓
-                                                     收完 + MD5 校验
+                                                    收完 + 大小/块计数校验
                                                               ↓
                                                      状态: downloaded
 
@@ -86,7 +88,7 @@
 ESP-07S 发"立即升级" -> App 写标志 -> 软复位（不做备份，备份由 Bootloader 负责）
 
 [阶段3: Bootloader 刷写]
-Bootloader 读标志 -> 备份片内 App 到片外备份区 -> 擦片内 -> 从片外新固件区写片内 -> MD5 校验 -> 跳转
+Bootloader 读标志 -> 备份片内 App 到片外备份区 -> 擦片内 -> 从片外新固件区解密写片内 -> HMAC-SHA256 校验 -> 跳转
 
 [阶段4: 启动确认]
 新 App 写"app_healthy" -> 通过 ESP-07S 上报结果
@@ -226,7 +228,7 @@ device/ota/result/{device_id}      # 升级结果上报
 | 页面 | 核心功能 |
 |---|---|
 | **登录页** | JWT 鉴权 |
-| **Dashboard** | 总设备数/在线数/各版本占比/进行中任务（数据平台大盘见 §21） |
+| **Dashboard（统一）** | 总设备数/在线数/告警数（统计卡片）+ 在线率趋势 + 各版本占比 + 进行中 OTA 任务。数据平台监控大盘功能并入此页（详见 §21） |
 | **固件管理** | 上传弹窗（拖拽 bin + 前端预计算 MD5 + 版本号 + release notes）、列表、发布 |
 | **设备管理** | 表格（搜索/筛选/批量分组）、详情抽屉（版本历史时间线） |
 | **OTA 任务** | 创建向导（4 步：选固件 → 选目标 → 配批次 → 确认）、列表、实时进度看板 |
@@ -259,7 +261,7 @@ device/ota/result/{device_id}      # 升级结果上报
 0x00_0000  新固件头     (4KB)    magic + size + IV(16B) + HMAC(32B) + version + receive_offset
 0x00_1000  新固件区     (256KB)  App 接收的待升级固件（密文存储）
 0x04_1000  备份固件头   (4KB)    backup_magic + size + IV(16B) + HMAC(32B) + version
-0x04_2000  备份固件区   (252KB)  升级前自动备份的当前 App（密文存储）
+0x04_2000  备份固件区   (256KB)  升级前自动备份的当前 App（密文存储）
 0x08_2000  保留
 ```
 
@@ -281,11 +283,10 @@ UART DMA 接收 + 空闲中断 -> 解帧 -> OTA 状态机
   4. 回 ACK
 
 收到全部完成 (CMD 0x07):
-  1. 读片外固件头 IV + HMAC
-  2. 流式读片外密文 + 计算 HMAC-SHA256(IV || 密文)
-  3. 比对计算值与固件头 HMAC
-  4. 通过: 状态 -> DOWNLOADED, 上报"待升级"
-  5. 失败: 上报错误, 状态 -> IDLE
+  1. 校验总大小与固件头 size 一致,块计数匹配
+  2. 通过: 状态 -> DOWNLOADED, 上报"待升级"
+  3. 失败: 上报错误, 状态 -> IDLE
+  （HMAC-SHA256 密码学校验由 Bootloader 在阶段3 负责，App 不持有密钥）
 
 收到立即升级 (CMD 0x08):
   1. 状态 -> UPGRADE_REQUESTED
@@ -368,8 +369,8 @@ HMAC 计算范围：`IV || Encrypted_Data`，确保 IV 不可篡改。
 | 阶段 | 操作 | 密钥持有者 |
 |---|---|---|
 | App 接收固件块 | UART 收密文 -> 写片外 flash | App 无密钥，纯转发写入 |
-| App 整体校验 | HMAC-SHA256 校验 | App 持有 HMAC key（可省，由 Bootloader 兜底） |
-| Bootloader 升级 | 读片外密文 -> AES 解密 -> 写片内明文 | Bootloader 持有 AES + HMAC key |
+| App 接收完成 | 大小 + 块计数校验（非密码学） | App 无密钥 |
+| Bootloader 升级 | 读片外密文 -> AES 解密 -> 写片内明文 -> HMAC 校验 | Bootloader 持有 AES + HMAC key |
 | Bootloader 备份 | 读片内明文 -> AES 加密 -> 写片外密文 | Bootloader 持有 AES + HMAC key |
 | Bootloader 回滚 | 读片外密文 -> AES 解密 -> 写片内明文 | Bootloader 持有 AES + HMAC key |
 
@@ -533,29 +534,33 @@ while (offset < total_size) {
 | Vue3 前端 | 构建为静态文件，Nginx 托管 |
 | MySQL | 阿里云 RDS（高可用版，自动备份） |
 | OSS | 阿里云 OSS 私有 bucket |
-| MQTT Broker | EMQX 开源版（ECS 自建）或阿里云 MQ for MQTT（托管） |
+| MQTT Broker | EMQX 开源版（ECS 自建） |
+| TDengine | ECS 自建（开源版，taosX 桥接 EMQX） |
 | 域名 + SSL | 阿里云域名 + 免费 DV 证书 |
 
-ECS 配置建议：2C4G 起步，MQTT broker 单独一台。
+ECS 配置建议：**4C8G** 起步（EMQX + TDengine + FastAPI + Nginx 同机），数据盘 2TB 起（TDengine 压缩后存储）。设备量增长后可 EMQX / TDengine 各拆独立 ECS。
 
 ---
 
 ## 13. 下一步可选起点
 
-1. **STM32 Bootloader 代码骨架** — Flash 布局 + 读片外 + 写片内 + 跳转 + 回滚
+### OTA 系统
+
+1. **STM32 Bootloader 代码骨架** — Flash 布局 + 读片外 + 写片内 + 跳转 + 回滚 + AES/HMAC
 2. **STM32 App OTA 模块骨架** — UART DMA 收帧 + 片外 flash 读写 + 状态机
 3. **ESP-07S 流式转发骨架** — MQTT 订阅 + HTTP stream → UART 帧分块发送 + 断点续传
 4. **FastAPI 后端 MVP 骨架** — 核心数据模型 + API + MQTT publisher
 5. **片外 flash 驱动骨架** — W25Qxx 扇区管理 + 断点续传 offset 管理
 
-建议推进顺序：
-1. STM32 Bootloader 先行（最硬核，独立可测，用 PC 串口工具模拟）
-2. STM32 App OTA 模块（用 PC 模拟 ESP-07S）
-3. ESP-07S 流式转发（用 PC 起 HTTP 服务）
-4. 后端 MVP
-5. 前端 MVP
-6. 联调
-7. 补企业级能力（分组/批次/灰度/Dashboard/回滚）
+### 数据平台
+
+6. **TDengine 部署 + 建库建表** — ECS 安装 TDengine + taosX 订阅 EMQX + 创建超级表
+7. **FastAPI 时序查询 API** — TDengine connector + telemetry/events/alerts 路由
+8. **前端监控大盘 MVP** — ECharts 实时值卡片 + 在线率趋势 + 设备列表
+9. **STM32 data_report 模块** — 传感器采集 + JSON 打包 + UART CMD 0x10
+10. **ESP-07S data_forwarder 模块** — UART 收帧 → MQTT publish + ACK
+
+全系统实施顺序详见 §25。
 
 ---
 
@@ -631,7 +636,7 @@ ECS 配置建议：2C4G 起步，MQTT broker 单独一台。
 | STM32 | OTA 不变；定时读传感器 → 构造 JSON → UART 发送 | 加 data_report |
 | EMQX | MQTT 路由、设备认证 | 新增 data topic 路由 |
 | TDengine | 时序数据：遥测 + 事件 + 告警 + 自动降采样聚合；通过 taosX 原生 MQTT 订阅直接消费 EMQX 消息 | **新增组件** |
-| MySQL | 元数据：设备台账、用户、分组、告警规则、OTA 任务 | 精简，移除时序表 |
+| MySQL | 元数据：设备台账、用户、分组、告警规则、OTA 任务 | 不存时序数据，保持轻量 |
 | FastAPI | 时序查询 API + 管理 API + MQTT 控制下发 | 拆分 router，各连各 DB |
 | Vue3 | 全局大盘 + 设备详情 + 告警中心 + OTA 管理 | 新增监控页面 |
 
