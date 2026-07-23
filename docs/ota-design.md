@@ -15,7 +15,7 @@
 | 项目 | 说明 |
 |---|---|
 | 主控 MCU | STM32F1（裸机/RTOS，固件 < 256KB） |
-| WiFi 模块 | ESP-07S (ESP8266)，作为协处理器 |
+| WiFi 模块 | ESP-07S (ESP8266)，**透明数据桥接**（UART ↔ MQTT/HTTP 双向转换，不做业务处理、不缓存数据） |
 | 主控 ↔ WiFi | UART 连接（460800 或 921600 bps，DMA + 空闲中断） |
 | 云端 | 阿里云 ECS + RDS MySQL + OSS + EMQX |
 | 设备规模 | **10,000 台** |

@@ -8,9 +8,9 @@
 
 ## 1. 项目概述
 
-为 >100 台 STM32 嵌入式设备提供远程固件升级能力：
+为 **10,000 台** STM32 嵌入式设备提供远程固件升级 + 数据采集能力：
 
-- **设备端**：STM32F1 主控 + ESP-07S WiFi 协处理器
+- **设备端**：STM32F1 主控 + ESP-07S WiFi 透传模块（透明桥接，不做业务处理）
 - **云端**：阿里云 ECS + RDS MySQL + OSS + EMQX MQTT broker
 - **管理后台**：Vue3 + Element Plus
 - **后端服务**：Python FastAPI
