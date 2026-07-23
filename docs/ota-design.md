@@ -886,6 +886,8 @@ GET /api/v1/telemetry/stats
   → 统计：avg/max/min/count
 ```
 
+> **使用边界**：`/telemetry/latest` 面向**分页等小批量**场景（设备列表当前页的几十台），`dev_ids` 不宜一次传上万。全局大盘的总数/在线率/告警分布等走 §19.3 **聚合接口**（`/dashboard/*`），不逐设备取 latest；按组看板可用 `group_id` 过滤聚合。
+
 ### 19.2 事件/告警 API
 
 ```
