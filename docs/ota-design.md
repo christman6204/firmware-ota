@@ -208,6 +208,17 @@ POST   /api/v1/device/ota/report      # 上报升级结果
 - 设备端：一机一密（`dev_id` + `secret` 烧录到 flash），MQTT username/password 用之
 - 前端：JWT
 
+### 设备认证与自动注册
+
+设备首次上线无需显式调 `POST /api/v1/device/register`，而是通过 **EMQX 认证钩子自动注册**：
+
+1. **产线预置**：`dev_id`（uint32）与 `secret` 在出厂时同时烧录到 STM32 flash 并录入服务端 `devices` 表（`dev_id` + `secret_hash`）。`secret` 可由服务端主设备密钥按 `HMAC-SHA256(master_device_key, dev_id)` 派生，这样服务端不存每设备明文 secret，验证时重算比对即可。
+2. **ESP-07S 连接 MQTT**：username = `dev_id` 十进制串，password = `secret` 的 hex 字符串。
+3. **EMQX auth 钩子**：收到 CONNECT 后，查 `devices` 表（或计算派生 secret）验证 username/password。通过则允许连接。
+4. **自动注册**：若 `dev_id` 不在 `devices` 表中，EMQX 钩子自动 `INSERT` 一条初始记录（`dev_id` + `secret_hash` + 默认分组 + `status=offline` + `created_at=NOW()`），首次心跳到达后更新为 `online`。
+
+> 这种方式无需设备主动调 HTTP 注册接口，出厂烧录即上线。`POST /api/v1/device/register`（§4）保留用作手动注册/预录入的便捷入口。
+
 ---
 
 ## 5. MQTT 主题设计
@@ -220,11 +231,13 @@ ota/cmd/{dev_id}                # 下发升级指令（单设备）
 
 ota/cmd/group/{group_id}           # 分组广播
 
-device/heartbeat/{dev_id}       # 设备心跳（retained）
+device/heartbeat/{dev_id}       # 设备心跳（非 retained：心跳是瞬态数据，retained 会保留过时值；离线判断用 EMQX 连接状态或 devices.last_seen 字段）
 device/status/{dev_id}          # 通用状态上报（在线/版本等）
 device/ota/progress/{dev_id}    # OTA 进度上报（下载/升级过程中周期性）
   payload: {"task_id":"...","state":"downloading","download_offset":123456,"progress":56}
 device/ota/result/{dev_id}      # 升级最终结果上报（success/failed）
+device/config/ack/{dev_id}      # 配置下发结果上报（ESP 收到 STM32 CMD 0x13 后转发）
+  payload: {"result":0}         # 0=ok/1=parse_err/2=unsupported，对应 §9 CMD 0x13
 ```
 
 > **OTA 进度回传**：下载/升级过程中，ESP-07S 周期性（如每收 N 个块或每秒，取较疏者）publish `device/ota/progress/{dev_id}`，携带 `task_id + state + download_offset + progress`。云端（FastAPI 订阅或 EMQX 规则引擎）据此更新 `ota_task_records` 的 `download_offset/progress/status`，驱动 §6 实时进度看板。`download_offset` 由 ESP 从 HTTP 下载进度取得（STM32 写入进度经 CMD 0x06 ACK 的 offset 回传）。最终成败经 `device/ota/result`（对应 CMD 0x09）上报。
@@ -444,6 +457,23 @@ HMAC 计算范围：`IV || Encrypted_Data`，确保 IV 不可篡改。
 
 ## 8. ESP-07S 端设计（流式转发）
 
+### 启动与网络初始化
+
+ESP-07S 上电后按以下顺序初始化（任何一步失败则重试，重试间隔递增，最大 60s）：
+
+```
+1. 连接 WiFi（SSID/密码由 provisioning 提供，机制待定，见 E1）
+2. 连接 MQTT broker（地址/端口在固件中硬编码为 DNS 域名，如 mqtt.example.com:8883）
+3. 以 dev_id + secret 做 MQTT CONNECT 认证（§4 鉴权）
+4. 订阅主题：ota/cmd/{dev_id}（QoS 1）、cmd/{dev_id}/config（QoS 1）
+5. 发布 device/heartbeat/{dev_id}（含 state + version）宣告上线
+6. 进入主循环：UART 收帧 → 按 CMD 分发处理
+```
+
+> WiFi 断线时 ESP 自动重连 MQTT，重连成功后重新订阅并发布心跳。WiFi/MQTT 重连期间，STM32 持续发来 CMD 0x0A 心跳/0x10 数据帧——ESP UART 收帧缓冲暂存（若不缓存则丢弃，见 §20.5 错误处理）并继续尝试重连。
+
+### 流式转发（OTA 下载）
+
 ESP-07S 是纯管道，HTTP 流进来一块就 UART 转一块，不在本地缓存：
 
 ```cpp
@@ -527,7 +557,7 @@ while (offset < total_size) {
 | 0x10 | MCU→ESP | 数据上报 | `dev_id[4] + JSON[...]` | §20 数据采集 |
 | 0x11 | ESP→MCU | 数据上报 ACK | `result[1]` | 0=ok/1=fail |
 | 0x12 | ESP→MCU | 配置下发 | `json_len[2] + config_json[...]` | 云端 `cmd/{dev_id}/config` 透传，或 ESP 自主 NTP 校时（§20.2），如 `{"report_interval_ms":10000}` / `{"rtc_sync":<unix_ts>}` |
-| 0x13 | MCU→ESP | 配置 ACK | `result[1]` | 0=ok/1=parse_err/2=unsupported |
+| 0x13 | MCU→ESP | 配置 ACK | `result[1]` | 0=ok/1=parse_err/2=unsupported；ESP 收到后 publish `device/config/ack/{dev_id}` 上报云端（§5） |
 
 ### UART 复用与并发
 
@@ -722,8 +752,15 @@ ECS 配置建议：**4C8G** 起步（EMQX + TDengine + FastAPI + Nginx 同机）
 告警规则存储在 MySQL `alert_rules` 表中，由 **FastAPI 后台定时任务** 周期性评估（10-30s 可配）：
 
 1. 从 MySQL 读取所有启用的告警规则
-2. 对每条规则，从 TDengine 查询 `SELECT count(*) FROM telemetry WHERE dev_id = ? AND ts > NOW - <duration> AND <metric> > <threshold>`（`<metric>` 取自该规则的 `alert_rules.metric` 字段，如 `temp`）
-3. 判断触发：over_cnt ≥ 应有采样数 × 容忍比例 → 写入 alerts 表 + 推送 MQTT 通知
+2. 对每条规则，从 TDengine **批量查询**（非逐设备循环）：
+   ```sql
+   SELECT dev_id, count(*) AS over_cnt
+   FROM telemetry
+   WHERE ts > NOW - <duration> AND <metric> > <threshold>
+   GROUP BY dev_id
+   ```
+   （`<metric>` 取自 `alert_rules.metric`，**⚠ 必须与 §17.1 列名白名单比对后才拼入 SQL**，禁止直接从 DB 取值拼接）
+3. 对查询返回的每个 `(dev_id, over_cnt)`，判断 `over_cnt ≥ 应有采样数 × 容忍比例` → 触发 → 写入 alerts 表（MySQL）+ 写入 alert_snapshots（TDengine）+ 通过 §6 **WebSocket 推送告警通知**给前端。前端亦可轮询 `GET /api/v1/alerts?status=active` 兜底
 4. 未触发且之前是告警态 → 自动恢复，更新 resolved_at
 
 > **应有采样数** = `duration ÷ 上报间隔`（如 30s ÷ 5s = 6 点）。乘以**容忍比例**（默认 0.8，可配）以容忍偶发丢包/上报抖动，避免个别点缺失导致漏报；即 6 点窗口内有 ≥5 点超阈值即判为"持续超阈值"。
@@ -903,7 +940,7 @@ GET /api/v1/telemetry/stats
   → 统计：avg/max/min/count
 ```
 
-> **使用边界**：`/telemetry/latest` 面向**分页等小批量**场景（设备列表当前页的几十台），`dev_ids` 不宜一次传上万。全局大盘的总数/在线率/告警分布等走 §19.3 **聚合接口**（`/dashboard/*`），不逐设备取 latest；按组看板可用 `group_id` 过滤聚合。
+> **使用边界**：`/telemetry/latest` 面向**分页等小批量**场景（设备列表当前页的几十台），`dev_ids` 不宜一次传上万。全局大盘的总数/在线率/告警分布等走 §19.3 **聚合接口**（`/dashboard/*`），不逐设备取 latest；**按组看板**可用 `?group_id=3` 过滤（后端查 `devices` 表取该组 dev_id 列表，再在 TDengine 中 `WHERE dev_id IN (...)` 取 latest，内部自动分页）。
 
 ### 19.2 事件/告警 API
 
