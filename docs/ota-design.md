@@ -384,7 +384,7 @@ Bootloader 不涉及 UART 协议，集中负责备份片内、读片外新固件
 上电:
   1. 读参数区状态
   2. if state == UPGRADE_REQUESTED:
-     a. 读片外新固件头: size（blob 总长，含 IV+密文+HMAC）
+     a. 读片外新固件头: size（blob 总长，含 IV+密文+HMAC）；若读取失败（SPI 超时等），中止升级，state = IDLE，跳转当前 App
         * IV    = 新固件区[0 : 16]            # blob 首 16B
         * HMAC  = 新固件区[size-32 : size]    # blob 末 32B
         * 密文  = 新固件区[16 : size-32]
@@ -398,6 +398,7 @@ Bootloader 不涉及 UART 协议，集中负责备份片内、读片外新固件
           * 计算备份 HMAC, 拼接备份 blob [IV + 密文 + HMAC] 写入备份区
           * 写备份固件头 (backup_magic + size + version)
           * 写 magic
+          * **备份过程中任何一步失败 -> 中止升级，state = IDLE，跳转当前 App（片内 App 未动，完整无损）
         - magic 存在: 跳过备份 (上次已备份,这是断电重入)
      d. 擦除片内 App 区
      e. 流式解密写入:
