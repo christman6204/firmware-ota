@@ -1,7 +1,10 @@
-# STM32 + ESP-07S OTA 系统设计文档
+# STM32 + ESP-07S OTA 升级 & 数据采集系统 — 设计文档
 
-> 生成时间：2026-07-20
-> 状态：设计阶段完成，待选实现起点
+> 版本: v2.0 | 更新: 2026-07-23 | 状态: 设计阶段完成
+
+**本文档覆盖两大子系统：**
+- **Part A（§1-13）：OTA 固件升级系统** — 远程固件下发、加密传输、Bootloader 安全升级
+- **Part B（§14-26）：数据采集平台** — 10,000 节点遥测上报、时序存储、监控大盘
 
 ---
 
@@ -511,3 +514,438 @@ ECS 配置建议：2C4G 起步，MQTT broker 单独一台。
 5. 前端 MVP
 6. 联调
 7. 补企业级能力（分组/批次/灰度/Dashboard/回滚）
+
+---
+
+# Part B：数据采集平台
+
+---
+
+## 14. 数据平台概述
+
+在已有 OTA 基础设施上叠加数据采集上报能力。10,000 台 STM32 + ESP-07S 设备定时上报遥测数据（传感器读数、电气参数、开关量），云端存储、查询、展示。
+
+### 14.1 核心指标
+
+| 指标 | 值 |
+|---|---|
+| 节点数 | 10,000 台 STM32 + ESP-07S |
+| 上报频率 | 每 5 秒 |
+| 单条大小 | ~1 KB（环境量 + 电气量 + 开关量，约 16 字段） |
+| 写入吞吐 | 2,000 条/s，~2 MB/s |
+| 日增量 | ~172 GB（压缩后 ~10 GB） |
+| 数据保留 | 6-12 个月 |
+| 查询场景 | 按设备+时间段查历史曲线、聚合统计 |
+| 展示 | 全局监控大盘 + 单设备详情 + 告警中心 |
+
+### 14.2 与 OTA 系统关系
+
+- 复用现有云基础设施（ECS / RDS MySQL / EMQX / OSS）
+- 复用 STM32 + ESP-07S 硬件和 UART 帧协议（新增 `CMD_DATA_REPORT` 命令）
+- 复用 FastAPI + Vue3 + Element Plus 技术栈
+- OTA 能力保持不动，数据采集为增量功能
+
+---
+
+## 15. 数据平台架构
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                        阿里云                                      │
+│                                                                    │
+│  ┌─────────┐     ┌──────────┐     ┌──────────────┐               │
+│  │  EMQX   │────▶│ TDengine │     │  MySQL (RDS)  │               │
+│  │ MQTT    │     │ (ECS自建) │     │ 设备/用户/OTA │               │
+│  │ Broker  │     │ 时序数据   │     │ 配置/告警规则 │               │
+│  └────▲────┘     └─────┬────┘     └──────┬───────┘               │
+│       │                │                 │                         │
+│       │          ┌─────┴────────┬────────┘                        │
+│       │          │              │                                  │
+│       │     ┌────▼────┐   ┌────▼────┐                             │
+│       │     │ FastAPI │   │ FastAPI │                             │
+│       │     │ (时序API)│   │ (管理API)│                             │
+│       │     └────┬────┘   └────┬────┘                             │
+│       │          │              │                                  │
+│       │     ┌────▼──────────────▼────┐                            │
+│       │     │      Vue3 前端          │                            │
+│       │     │  监控大盘 + 设备详情     │                            │
+│       │     └────────────────────────┘                            │
+│                                                                    │
+└──────────────────────────────────────────────────────────────────┘
+       │
+   MQTT (port 1883/8883)
+       │
+  ┌────┴────────────┐
+  │  10,000 台设备   │
+  │  STM32 + ESP-07S │
+  └─────────────────┘
+```
+
+### 15.1 组件职责
+
+| 组件 | 职责 | 变化 |
+|---|---|---|
+| ESP-07S | OTA 不变；新增数据上报：UART 收帧 → CRC 校验 → MQTT publish | 加 data_forwarder |
+| STM32 | OTA 不变；定时读传感器 → 构造 JSON → UART 发送 | 加 data_report |
+| EMQX | MQTT 路由、设备认证 | 新增 data topic 路由 |
+| TDengine | 时序数据：遥测 + 事件 + 告警 + 自动降采样聚合；通过 taosX 原生 MQTT 订阅直接消费 EMQX 消息 | **新增组件** |
+| MySQL | 元数据：设备台账、用户、分组、告警规则、OTA 任务 | 精简，移除时序表 |
+| FastAPI | 时序查询 API + 管理 API + MQTT 控制下发 | 拆分 router，各连各 DB |
+| Vue3 | 全局大盘 + 设备详情 + 告警中心 + OTA 管理 | 新增监控页面 |
+
+### 15.2 告警评估机制
+
+告警规则存储在 MySQL `alert_rules` 表中，由 **FastAPI 后台定时任务** 周期性评估（10-30s 可配）：
+
+1. 从 MySQL 读取所有启用的告警规则
+2. 对每条规则，从 TDengine 查询 `SELECT last(*) FROM telemetry WHERE dev_id = ?`
+3. 判断触发：当前值超阈值 且 持续时长 ≥ duration → 写入 alerts 表 + 推送 MQTT 通知
+4. 未触发且之前是告警态 → 自动恢复，更新 resolved_at
+
+| 告警场景 | 实现 |
+|---|---|
+| 阈值告警 | `temp > 80` 且持续 30s → 触发 |
+| 离线告警 | `last_seen` 超过 5 分钟未更新 → 触发（直接看 MySQL devices 表） |
+| 恢复判断 | 值回落 + 持续正常 ≥ 1 个评估周期 → 自动 resolve |
+
+### 15.3 设备在线判定
+
+- 每次收到 MQTT 遥测，**EMQX 规则引擎**更新 `devices.last_seen = NOW()`
+- `online` — `last_seen` 在 5 分钟内
+- `offline` — `last_seen` 超过 5 分钟
+- taosX 负责海量数据写入，EMQX 规则引擎负责轻量 `last_seen` 更新，互不干扰
+
+---
+
+## 16. 数据库选型：为什么加 TDengine
+
+| | MySQL | TDengine |
+|---|---|---|
+| 年存储成本 | ~84 万元（62 TB 云盘） | ~6 万元（~3 TB 云盘，压缩后） |
+| 写入路径 | 事务 + 索引 + redo log | 无事务开销，直接追加列文件 |
+| 查询性能 | 随数据增长退化 | 一设备一表，物理隔离，永远快 |
+| 维护负担 | 需持续 DBA 调优 | 几乎零运维 |
+| 适用场景 | 设备台账、用户、OTA（元数据） | 时序遥测、事件、告警（海量数据） |
+
+**MySQL 不能去掉**：用户/角色/权限、设备台账 CRUD、OTA 任务状态机、告警规则配置——这些关系型操作仍是 MySQL 的主场。TDengine 只管时序数据。
+
+---
+
+## 17. 数据模型
+
+### 17.1 TDengine — 遥测超级表
+
+```sql
+-- KEEP 按需设置：推荐 180 DAYS（6 个月），可调 90/365
+CREATE DATABASE iot_data KEEP 180 DAYS 10 BLOCKS 4;
+
+CREATE STABLE telemetry (
+  ts         TIMESTAMP,
+  -- 环境量
+  temp       FLOAT,          -- 温度 (°C)
+  hum        FLOAT,          -- 湿度 (%)
+  pressure   FLOAT,          -- 气压 (hPa)
+  -- 电气量
+  volt_in    FLOAT,          -- 输入电压 (V)
+  volt_out   FLOAT,          -- 输出电压 (V)
+  current    FLOAT,          -- 电流 (A)
+  power      FLOAT,          -- 功率 (W)
+  energy     FLOAT,          -- 累计电量 (kWh)
+  freq       FLOAT,          -- 电网频率 (Hz)
+  -- 开关量
+  di1        TINYINT,        -- 数字输入 1
+  di2        TINYINT,        -- 数字输入 2
+  di3        TINYINT,        -- 数字输入 3
+  di4        TINYINT,        -- 数字输入 4
+  -- 设备状态
+  rssi       INT,            -- WiFi 信号强度 (dBm)
+  uptime     BIGINT,         -- 设备运行秒数
+  -- 扩展（冷门/临时字段，后续可 ALTER STABLE 提升为正式列）
+  payload    NCHAR(1024)      -- 扩展字段 (JSON)
+) TAGS (
+  dev_id     NCHAR(32),       -- 设备编号
+  group_id   INT,             -- 分组
+  location   NCHAR(64)        -- 位置
+);
+```
+
+> 当前列表示例覆盖环境 + 电气 + 开关量典型场景，单条序列化约 800~1000 字节。TDengine 列式压缩让 20~30 列也不浪费存储。新增列：`ALTER STABLE telemetry ADD COLUMN xxx FLOAT;`，万张子表秒级继承。
+
+### 17.2 TDengine — 事件表
+
+```sql
+CREATE STABLE events (
+  ts       TIMESTAMP,
+  level    TINYINT,       -- 0=info 1=warn 2=error
+  code     NCHAR(32),
+  msg      NCHAR(256)
+) TAGS (
+  dev_id   NCHAR(32)
+);
+```
+
+### 17.3 扩展字段策略
+
+**"宽表 + payload 兜底"**：常用字段建列保证查询性能；冷门字段走 payload JSON 灵活扩展；确认稳定后 `ALTER STABLE` 提升为正式列。
+
+### 17.4 MySQL — 新增元数据表
+
+在已有 OTA 表基础上新增：
+
+```sql
+-- 告警规则
+alert_rules: id, name, metric, operator(>/</=), threshold,
+             duration, level, enabled
+
+-- 告警记录（MySQL 存概要，TDengine 存触发时的原始快照）
+alerts: id, dev_id, rule_id, level, msg, triggered_at, resolved_at
+```
+
+已有的 `devices` 表扩展 `status(online/offline)` 和 `last_seen` 字段。
+
+---
+
+## 18. 数据格式约定
+
+| 层 | 格式 | 说明 |
+|---|---|---|
+| STM32 → ESP-07S | `{"ts":1721712000,"t":25.3,"h":68.2,"p":101.3,"vi":220.1,...}` | 简短 key 节省 UART 带宽 |
+| ESP-07S → MQTT | 同上，透传 | 不做转换 |
+| FastAPI → 前端 | `{"ts":"2026-07-23T10:00:00","temperature":25.3,...}` | 完整 key，前端友好 |
+
+---
+
+## 19. API 设计（数据平台部分）
+
+### 19.1 时序查询 API
+
+```
+GET /api/v1/telemetry/latest?dev_ids=dev_001,dev_002
+  → 每个设备最新一条数据（大盘实时值）
+
+GET /api/v1/telemetry/history
+  ?dev_id=dev_001&start=2026-07-22T00:00:00&end=2026-07-23T00:00:00&interval=1m
+  → 降采样查询，interval 支持 10s/1m/5m/1h/1d
+
+GET /api/v1/telemetry/stats
+  ?dev_id=dev_001&start=2026-07-16&end=2026-07-23
+  → 统计：avg/max/min/count
+```
+
+### 19.2 事件/告警 API
+
+```
+GET /api/v1/events?dev_id=dev_001&level=2&start=...&end=...
+GET /api/v1/alerts?status=active
+GET /api/v1/alerts/history?dev_id=dev_001&page=1&size=20
+```
+
+### 19.3 大盘聚合 API
+
+```
+GET /api/v1/dashboard/summary
+  → { total, online, offline, alerts_active }
+
+GET /api/v1/dashboard/group-stats
+  → 每个分组的在线率、告警数
+
+GET /api/v1/dashboard/alert-trend?days=7
+  → 最近 7 天每天告警趋势
+```
+
+### 19.4 MQTT Topic 设计（新增）
+
+```
+data/{dev_id}/telemetry    → 遥测 JSON，TDengine taosX 原生 MQTT 订阅直接写入
+data/{dev_id}/event        → 事件/告警
+cmd/{dev_id}/config        → 云端下发配置（如修改上报间隔）
+```
+
+---
+
+## 20. 数据采集 — STM32 / ESP-07S
+
+### 20.1 总体原则
+
+STM32 只管采集 + 打包，ESP-07S 只管透明转发。ESP 不解析 JSON 内容，不缓存数据。与 OTA 的"ESP 不缓存固件"哲学一致。
+
+### 20.2 STM32 端
+
+```
+定时器中断 (5s) → 读传感器 → 构造 JSON (~1KB) → 封装 UART 帧 (CMD=0x10) → DMA 发送
+```
+
+改动：`uart_protocol.c` 加 `CMD_DATA_REPORT (0x10)`，新建 `data_report.c`（~100 行）。
+
+### 20.3 ESP-07S 端
+
+```
+UART 收帧 → 校验 CRC16 → 提取 JSON → mqttClient.publish(data/{dev_id}/telemetry) → 返回 ACK
+```
+
+改动：新建 `data_forwarder.cpp`（~50 行）。
+
+### 20.4 UART 帧格式（复用现有协议）
+
+```
+[0xAA][0x55][LEN_H][LEN_L][CMD=0x10][dev_id 4B][JSON...][CRC16]
+```
+
+帧开销 12 字节，JSON 本体 ~1KB，总帧长约 1032 字节。460800 bps 下传输约 22ms。
+
+### 20.5 错误处理
+
+| 端 | 场景 | 处理 |
+|---|---|---|
+| STM32 | 传感器读取失败 | 对应字段填 null，不跳过上报 |
+| STM32 | UART 发送缓冲区满 | 丢本次数据，记录丢包计数 |
+| STM32 | 连续 N 次 ACK 超时 | 标记通信故障，上报事件 |
+| ESP-07S | WiFi 断连 | 不缓存，丢就丢了 |
+| ESP-07S | MQTT publish 失败 | 重试 1 次，仍失败则丢弃 |
+| ESP-07S | CRC16 校验失败 | 直接丢弃，不 ACK |
+
+---
+
+## 21. 前端页面设计
+
+### 21.1 新增页面
+
+```
+📊 监控大盘     → 4 统计卡片 + 在线率趋势 + 告警分布饼图 + 分组状态表格
+📈 设备详情     → 实时值卡片 + ECharts 历史曲线 (1h/6h/24h/7d/30d) + 事件时间线
+🔔 告警中心     → 分级筛选标签 + 分页列表 + 展开详情
+```
+
+### 21.2 前端技术组合
+
+| 需求 | 选型 |
+|---|---|
+| 框架 | Vue3 + TypeScript + Vite（沿用） |
+| 组件库 | Element Plus（沿用） |
+| 图表 | ECharts — 大数据量曲线，dataZoom 缩放 |
+| 状态管理 | Pinia（沿用） |
+| 实时更新 | MQTT over WebSocket 直连 EMQX |
+| 历史曲线 | HTTP 请求 FastAPI/TDengine，按需加载 |
+
+---
+
+## 22. 部署与成本
+
+### 22.1 服务器规划
+
+```
+现有 ECS (复用)
+├── EMQX (MQTT broker, port 1883/8883/8084)
+├── TDengine (时序数据库)            ← 新增
+└── FastAPI (Nginx + uvicorn, port 8000)
+
+RDS MySQL (现有，复用) ─── 设备/用户/OTA 元数据
+OSS (现有，复用)        ─── OTA 固件包
+```
+
+不需要新增云资源，仅现有 ECS 上安装 TDengine 开源版。
+
+### 22.2 成本对比
+
+| 保留期 | TDengine 方案年成本 | 纯 MySQL 方案年成本 |
+|---|---|---|
+| 6 个月 | ~5.8 万元 | ~84 万元 |
+| 12 个月 | ~6.8 万元 | ~84 万元 |
+
+差距全在存储压缩上（TDengine 压缩比 10-20x，MySQL 不压缩）。
+
+### 22.3 项目目录结构
+
+```
+D:\claude\514\
+├── stm32-bootloader/          (已有，不动)
+├── stm32-app/                 (扩展)
+│   └── src/
+│       ├── ota_task.c         (已有)
+│       ├── data_report.c      (新增)
+│       └── uart_protocol.c    (扩展)
+├── esp07s/                    (扩展)
+│   └── src/
+│       ├── data_forwarder.cpp (新增)
+│       └── uart_transport.cpp (扩展)
+├── backend/                   (扩展)
+│   └── app/
+│       ├── api/
+│       │   ├── telemetry.py   (新增)
+│       │   ├── devices.py     (新增)
+│       │   └── ota.py         (已有)
+│       ├── services/
+│       │   └── td_connector.py(新增)
+│       └── mqtt/              (已有)
+├── frontend/                  (扩展)
+│   └── src/
+│       ├── views/
+│       │   ├── Dashboard.vue      (新增)
+│       │   ├── DeviceDetail.vue   (新增)
+│       │   └── AlertCenter.vue    (新增)
+│       ├── api/
+│       │   └── telemetry.ts       (新增)
+│       └── components/
+│           ├── StatCard.vue       (新增)
+│           └── TimeSeriesChart.vue(新增)
+└── docs/
+    └── ota-design.md              (本文件)
+```
+
+---
+
+## 23. 安全
+
+- MQTT: TLS (port 8883)，设备证书认证
+- HTTP API: HTTPS + JWT token
+- TDengine 部署在 ECS 内网，不暴露公网端口；仅 FastAPI 通过内网 IP 连接
+- MySQL 沿用现有 RDS 安全组配置
+
+---
+
+## 24. 测试策略
+
+| 层 | 方法 | 工具 |
+|---|---|---|
+| STM32 data_report | PC 串口工具模拟 ESP-07S，验证帧格式 + JSON + CRC | 串口助手 + Python |
+| ESP-07S data_forwarder | PC 起 MQTT broker + 串口发帧，验证 publish | Mosquitto |
+| 后端 telemetry API | 单元测试 + httpx 集成测试 | pytest |
+| EMQX → TDengine | MQTT 客户端模拟 1000 设备并发上报 | paho-mqtt + 压力脚本 |
+| 前端 | Vitest 组件测试 + Playwright E2E | Vitest / Playwright |
+| 端到端 | 1-5 台真实设备验证完整链路 | 真实硬件 |
+
+---
+
+## 25. 实施顺序（全系统）
+
+```
+Phase 1: STM32 Bootloader                → OTA 核心
+Phase 2: STM32 App OTA 模块              → OTA 链路
+Phase 3: ESP-07S 流式转发                → OTA 链路
+Phase 4: 后端 MVP (FastAPI + MySQL)       → OTA 云端
+Phase 5: 前端 MVP (上传 + 触发升级)       → OTA 前端
+Phase 6: TDengine 部署 + EMQX 桥接        → 数据能进来  ← 数据平台起步
+Phase 7: FastAPI 时序查询 API             → 数据能出来
+Phase 8: 前端监控大盘 MVP                 → 数据能看
+Phase 9: STM32 + ESP-07S 数据上报适配     → 真实设备对接
+Phase 10: 告警规则引擎 + 告警中心          → 智能化
+Phase 11: 前端设备详情 + 历史曲线          → 完整体验
+Phase 12: 联调 + E2E                      → 全链路验证
+Phase 13: 企业级能力（分组/批次/灰度/导出） → 运营能力
+```
+
+---
+
+## 26. 关键设计决策汇总
+
+| 决策 | 结论 | 理由 |
+|---|---|---|
+| OTA 时序存储 | TDengine，不用 MySQL 存时序 | 存储成本降 14 倍，查询不退化 |
+| 数据分层 | 时序 → TDengine，元数据 → MySQL | 各用最合适的数据库 |
+| ESP-07S 角色 | 纯管道，不缓存固件也不缓存数据 | 代码简单，内存低，断电一致 |
+| 扩展字段 | 宽表 + payload 兜底 | 查询性能 + 灵活性平衡 |
+| 上报协议 | 复用现有 UART 帧协议 + CMD_DATA_REPORT | 最小化协议层改动 |
+| 前端图表 | ECharts | 大数据量曲线 + dataZoom 缩放 |
+| 告警评估 | FastAPI 后台定时任务 | 无需引入独立规则引擎 |
+| 在线判定 | EMQX 规则引擎更新 last_seen + 5min 超时 | 低延迟 + 防抖动 |
+| 加密 | AES-256-CTR + HMAC-SHA256，RDP Level 1 | OTA 固件安全（详见 Part A） |
