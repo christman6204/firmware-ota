@@ -46,7 +46,6 @@
 | STM32 片内 flash — 参数区 | `dev_id`（uint32）—— 参数区掉电保持、OTA 不擦除，确保固件升级后身份不丢 |
 | STM32 片内 flash — Bootloader 区 | 主密钥（AES+HMAC 共 64B，所有设备相同，RDP Level 1 保护） |
 | ESP-07S flash | WiFi SSID/密码、MQTT broker 地址（DNS 域名）、`dev_id` + `secret`（16B，取 `HMAC-SHA256(master_device_key, dev_id)` 前 16 字节；供 MQTT 认证和 topic 拼接） |
-| ESP-07S flash | WiFi SSID/密码、MQTT broker 地址（DNS 域名）、`dev_id` + `secret`（同 STM32，供 MQTT 认证和 topic 拼接） |
 
 > `dev_id` 的权威持有者是 STM32，ESP 持有产线烧录的副本仅用于 MQTT 连接认证。两者同批预置、应一致。secret 由服务端主设备密钥按 `HMAC-SHA256(master_device_key, dev_id)` 派生，服务端不存每设备明文 secret（验证时重算比对）。
 
@@ -470,7 +469,7 @@ HMAC 计算范围：`IV || Encrypted_Data`，确保 IV 不可篡改。
 | Bootloader 备份 | 读片内明文 -> AES 加密 -> 拼备份 blob 写备份区 | Bootloader 持有 AES + HMAC key |
 | Bootloader 回滚 | 读备份区 blob：IV+HMAC 校验，密文区解密写片内明文 | Bootloader 持有 AES + HMAC key |
 
-**性能估算（STM32F1 @72MHz 软件 AES）**：
+**性能估算（STM32F103VE @72MHz 软件 AES）**：
 - AES-256-CTR 软件实现：~50-80 KB/s
 - HMAC-SHA256 软件实现：~150 KB/s
 - ~256KB（App 区上限）加密或解密：3-5s
@@ -831,8 +830,8 @@ ECS 配置建议：**4C8G** 起步（EMQX + TDengine + FastAPI + Nginx 同机）
 ### 17.1 TDengine — 遥测超级表
 
 ```sql
--- KEEP 按需设置：推荐 180 DAYS（6 个月），可调 90/365
-CREATE DATABASE iot_data KEEP 180 DAYS 10 BLOCKS 4;
+-- KEEP 按需设置：推荐 180d（6 个月），可调 90d/365d
+CREATE DATABASE iot_data KEEP 180d DURATION 10d BLOCKS 4;
 
 CREATE STABLE telemetry (
   ts         TIMESTAMP,
