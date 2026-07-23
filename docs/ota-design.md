@@ -229,14 +229,14 @@ device/ota/result/{device_id}      # 升级结果上报
 |---|---|
 | **登录页** | JWT 鉴权 |
 | **Dashboard（统一）** | 总设备数/在线数/告警数（统计卡片）+ 在线率趋势 + 各版本占比 + 进行中 OTA 任务。数据平台监控大盘功能并入此页（详见 §21） |
-| **固件管理** | 上传弹窗（拖拽 bin + 前端预计算 MD5 + 版本号 + release notes）、列表、发布 |
+| **固件管理** | 上传弹窗（拖拽 bin + 前端预计算 SHA256 + 版本号 + release notes）、列表、发布 |
 | **设备管理** | 表格（搜索/筛选/批量分组）、详情抽屉（版本历史时间线） |
 | **OTA 任务** | 创建向导（4 步：选固件 → 选目标 → 配批次 → 确认）、列表、实时进度看板 |
 | **系统设置** | MQTT/OSS 配置、设备密钥导出 |
 
 **关键组件**：
 - 任务进度看板用 WebSocket（FastAPI 原生支持）实时推送 `ota_task_records` 变化
-- 固件上传用分片 + MD5 前端校验
+- 固件上传用分片 + SHA256 前端校验
 - 下载进度显示字节级 offset（配合 `download_offset` 字段）
 
 > 数据平台新增页面（监控大盘、设备详情、告警中心）详见 Part B §21。
@@ -257,11 +257,13 @@ device/ota/result/{device_id}      # 升级结果上报
 
 #### 片外 SPI flash（如 W25Q64 8MB）
 
+> **存储约定（方案 A）**：新固件区 / 备份固件区均**原样存完整密文 blob** = `[IV(16B)][密文][HMAC(32B)]`。App 收到第 N 字节就写第 N 偏移，`receive_offset` 即已写 blob 字节数，与 HTTP 下载 offset、固件区写入 offset 三者相等，断点续传零换算。IV/HMAC 由 Bootloader 用固定偏移从固件区读取（IV 在 blob 首 16B，HMAC 在 blob 末 32B），故固件头不再单独存 IV/HMAC。
+
 ```
-0x00_0000  新固件头     (4KB)    magic + size + IV(16B) + HMAC(32B) + version + receive_offset
-0x00_1000  新固件区     (256KB)  App 接收的待升级固件（密文存储）
-0x04_1000  备份固件头   (4KB)    backup_magic + size + IV(16B) + HMAC(32B) + version
-0x04_2000  备份固件区   (256KB)  升级前自动备份的当前 App（密文存储）
+0x00_0000  新固件头     (4KB)    magic + size + version + receive_offset
+0x00_1000  新固件区     (256KB)  完整密文 blob：[IV 16B][密文][HMAC 32B]
+0x04_1000  备份固件头   (4KB)    backup_magic + size + version
+0x04_2000  备份固件区   (256KB)  完整密文 blob：[IV 16B][密文][HMAC 32B]
 0x08_2000  保留
 ```
 
@@ -278,12 +280,12 @@ UART DMA 接收 + 空闲中断 -> 解帧 -> OTA 状态机
 
 收到固件块 (CMD 0x05):
   1. 解析 offset + data
-  2. 写片外 flash 对应地址（写前需擦除，按 4KB 扇区管理）
-  3. 更新固件头 receive_offset
+  2. 写片外 flash：固件区基地址 + offset（offset 即 blob 字节偏移，与 HTTP 下载偏移一致）
+  3. 更新固件头 receive_offset = offset + len
   4. 回 ACK
 
 收到全部完成 (CMD 0x07):
-  1. 校验总大小与固件头 size 一致,块计数匹配
+  1. 校验 receive_offset == 固件头 size（blob 完整落盘）
   2. 通过: 状态 -> DOWNLOADED, 上报"待升级"
   3. 失败: 上报错误, 状态 -> IDLE
   （HMAC-SHA256 密码学校验由 Bootloader 在阶段3 负责，App 不持有密钥）
@@ -307,27 +309,33 @@ Bootloader 不涉及 UART 协议，集中负责备份片内、读片外新固件
 上电:
   1. 读参数区状态
   2. if state == UPGRADE_REQUESTED:
-     a. 读片外新固件头: size + IV + HMAC
+     a. 读片外新固件头: size（blob 总长，含 IV+密文+HMAC）
+        * IV    = 新固件区[0 : 16]            # blob 首 16B
+        * HMAC  = 新固件区[size-32 : size]    # blob 末 32B
+        * 密文  = 新固件区[16 : size-32]
      b. 检查片外备份区 magic:
         - magic 不存在: 备份片内 App (加密备份)
           * 生成随机备份 IV
           * 流式: 读片内 App 1KB (明文) -> AES-256-CTR 加密 (主密钥+备份IV) -> 写片外备份区 1KB (密文)
-          * 计算备份 HMAC, 写备份固件头 (backup_magic + size + IV + HMAC + version)
+          * 计算备份 HMAC, 拼接备份 blob [IV + 密文 + HMAC] 写入备份区
+          * 写备份固件头 (backup_magic + size + version)
           * 写 magic
         - magic 存在: 跳过备份 (上次已备份,这是断电重入)
      c. 擦除片内 App 区
      d. 流式解密写入:
-        * 读片外新固件区 1KB 密文
-        * AES-256-CTR 解密 (主密钥 + 新固件头 IV) -> 1KB 明文
+        * 读新固件区 1KB 密文 (从偏移 16 开始)
+        * AES-256-CTR 解密 (主密钥 + 新固件区 IV) -> 1KB 明文
         * 写片内 flash 1KB 明文
         * 循环
-     e. 整体 HMAC 校验 (重读片外密文, 比对新固件头 HMAC)
+     e. 整体 HMAC 校验 (重读新固件区 blob [IV + 密文], 计算并比末 32B HMAC)
      f. 通过: state = UPGRADING, 写新版本号, 清备份 magic, 跳转
-     g. 失败: 从片外备份区读密文 -> 解密 (备份 IV) -> 写片内明文 -> state = ROLLBACK -> 清备份 magic -> 跳转
+     g. 失败: 从备份区读密文 blob -> 解密 (备份 IV, 在备份区[0:16]) -> 写片内明文 -> state = IDLE -> 跳转
   3. elif state == UPGRADING (上次刚升级完,等 App 确认):
-     - 启动 30s 定时器
-     - App 必须在 30s 内写 "app_healthy" 标志
-     - 超时未 healthy: 从备份区回滚, state = ROLLBACK
+     - Bootloader 跳转前已启动 IWDG 独立看门狗 (30s)
+     - 新 App 正常启动后写 "app_healthy" 标志并喂狗; Bootloader 不再运行
+     - App 未在 30s 内写 app_healthy -> IWDG 超时复位 MCU
+     - 复位后 Bootloader 见 state==UPGRADING 且无 app_healthy -> 从备份区回滚 -> state = IDLE -> 跳转
+     - App 正常确认后清 app_healthy, state = IDLE (回到正常态)
   4. else: 直接跳转 App
 
 跳转 App:
@@ -368,11 +376,11 @@ HMAC 计算范围：`IV || Encrypted_Data`，确保 IV 不可篡改。
 **STM32 端加解密职责**：
 | 阶段 | 操作 | 密钥持有者 |
 |---|---|---|
-| App 接收固件块 | UART 收密文 -> 写片外 flash | App 无密钥，纯转发写入 |
-| App 接收完成 | 大小 + 块计数校验（非密码学） | App 无密钥 |
-| Bootloader 升级 | 读片外密文 -> AES 解密 -> 写片内明文 -> HMAC 校验 | Bootloader 持有 AES + HMAC key |
-| Bootloader 备份 | 读片内明文 -> AES 加密 -> 写片外密文 | Bootloader 持有 AES + HMAC key |
-| Bootloader 回滚 | 读片外密文 -> AES 解密 -> 写片内明文 | Bootloader 持有 AES + HMAC key |
+| App 接收固件块 | UART 收密文 blob 字节 -> 原样写片外固件区 | App 无密钥，纯转发写入 |
+| App 接收完成 | `receive_offset == size` 完整性校验（非密码学） | App 无密钥 |
+| Bootloader 升级 | 读固件区 blob：IV(首16B)+HMAC(末32B) 校验，密文区解密写片内明文 | Bootloader 持有 AES + HMAC key |
+| Bootloader 备份 | 读片内明文 -> AES 加密 -> 拼备份 blob 写备份区 | Bootloader 持有 AES + HMAC key |
+| Bootloader 回滚 | 读备份区 blob：IV+HMAC 校验，密文区解密写片内明文 | Bootloader 持有 AES + HMAC key |
 
 **性能估算（STM32F1 @72MHz 软件 AES）**：
 - AES-256-CTR 软件实现：~50-80 KB/s
@@ -417,10 +425,10 @@ while (offset < total_size) {
 // 5. 发 CMD 0x08 触发升级 (可由后端控制时机)
 ```
 
-**断点续传**：
+**断点续传**（三偏移相等，零换算）：
 - 网络中断后 ESP-07S 重连，UART 发 CMD 0x01 查询 STM32 已收 offset
-- STM32 返回固件头里的 `receive_offset`
-- ESP-07S 用 `Range: bytes=offset-` 重新发 HTTP 请求
+- STM32 返回固件头里的 `receive_offset`（= 固件区已写 blob 字节数）
+- ESP-07S 用 `Range: bytes=receive_offset-` 重新发 HTTP 请求（即固件区写入偏移 = HTTP 下载偏移 = receive_offset）
 - OSS 原生支持 Range
 
 **流控关键**：
@@ -448,7 +456,7 @@ while (offset < total_size) {
 |---|---|---|---|---|
 | 0x01 | ESP→MCU | 查询状态 | - | App 模式响应 |
 | 0x02 | MCU→ESP | 状态应答 | `state + receive_offset + version` | 含断点续传 offset |
-| 0x03 | ESP→MCU | 开始升级 | `task_id + version + size + iv + hmac` | App 进入接收模式 |
+| 0x03 | ESP→MCU | 开始升级 | `task_id + version + size` | App 进入接收模式（IV/HMAC 在 blob 内） |
 | 0x04 | MCU→ESP | 开始 ACK | `start_offset` | 0 全新 / N 续传 |
 | 0x05 | ESP→MCU | 固件块 | `offset[4] + len[2] + data[N]` | 1KB/块 |
 | 0x06 | MCU→ESP | 块 ACK | `offset + result` | 0=ok/1=crc/2=write_err |
@@ -483,7 +491,7 @@ while (offset < total_size) {
 
 ### 安全
 
-- HTTPS 下载 + 固件 MD5/SHA256 双校验
+- HTTPS 下载（传输层）+ 固件 HMAC-SHA256 校验（内容层，Bootloader 执行）
 - OSS 私有读 + 一次性签名 URL（5 分钟过期）
 - 一机一密，MQTT/HTTP 都校验
 - 可选：固件 ECDSA 签名（防服务器被入侵后植入恶意固件）
@@ -645,7 +653,7 @@ ECS 配置建议：**4C8G** 起步（EMQX + TDengine + FastAPI + Nginx 同机）
 告警规则存储在 MySQL `alert_rules` 表中，由 **FastAPI 后台定时任务** 周期性评估（10-30s 可配）：
 
 1. 从 MySQL 读取所有启用的告警规则
-2. 对每条规则，从 TDengine 查询 `SELECT last(*) FROM telemetry WHERE dev_id = ?`
+2. 对每条规则，从 TDengine 查询 `SELECT count(*) FROM telemetry WHERE dev_id = ? AND ts > NOW - <duration> AND temp > <threshold>`
 3. 判断触发：当前值超阈值 且 持续时长 ≥ duration → 写入 alerts 表 + 推送 MQTT 通知
 4. 未触发且之前是告警态 → 自动恢复，更新 resolved_at
 
@@ -657,9 +665,10 @@ ECS 配置建议：**4C8G** 起步（EMQX + TDengine + FastAPI + Nginx 同机）
 
 ### 15.3 设备在线判定
 
-- 每次收到 MQTT 遥测，**EMQX 规则引擎**更新 `devices.last_seen = NOW()`
+- 每次收到 MQTT 遥测（5s）或 OTA 心跳（60s），**EMQX 规则引擎**更新 `devices.last_seen = NOW()`
 - `online` — `last_seen` 在 5 分钟内
 - `offline` — `last_seen` 超过 5 分钟
+- 纯 OTA 设备（无数据平台）靠 60s 心跳维持在线；启用数据平台后 5s 遥测是主要更新源
 - taosX 负责海量数据写入，EMQX 规则引擎负责轻量 `last_seen` 更新，互不干扰
 
 ---
@@ -838,7 +847,7 @@ UART 收帧 → 校验 CRC16 → 提取 JSON → mqttClient.publish(data/{dev_id
 [0xAA][0x55][LEN_H][LEN_L][CMD=0x10][dev_id 4B][JSON...][CRC16]
 ```
 
-帧开销 12 字节，JSON 本体 ~1KB，总帧长约 1032 字节。460800 bps 下传输约 22ms。
+帧开销 11 字节（AA 55 + LEN×2 + CMD + dev_id×4 + CRC×2），JSON 本体 ~1KB，总帧长约 1035 字节。460800 bps 下传输约 22ms。
 
 ### 20.5 错误处理
 
@@ -896,10 +905,10 @@ OSS (现有，复用)        ─── OTA 固件包
 
 | 保留期 | TDengine 方案年成本 | 纯 MySQL 方案年成本 |
 |---|---|---|
-| 6 个月 | ~5.8 万元 | ~84 万元 |
+| 6 个月 | ~5.8 万元 | ~42 万元 |
 | 12 个月 | ~6.8 万元 | ~84 万元 |
 
-差距全在存储压缩上（TDengine 压缩比 10-20x，MySQL 不压缩）。
+差距全在存储压缩上（TDengine 压缩比 10-20x，MySQL 不压缩）。MySQL 6 个月 = 31 TB 云盘，12 个月 = 62 TB 云盘。
 
 ### 22.3 项目目录结构
 
@@ -943,7 +952,7 @@ D:\claude\514\
 
 ## 23. 安全
 
-- MQTT: TLS (port 8883)，设备证书认证
+- MQTT: TLS (port 8883) 传输加密 + 一机一密（username/password）认证
 - HTTP API: HTTPS + JWT token
 - TDengine 部署在 ECS 内网，不暴露公网端口；仅 FastAPI 通过内网 IP 连接
 - MySQL 沿用现有 RDS 安全组配置
