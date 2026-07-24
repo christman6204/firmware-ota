@@ -32,6 +32,7 @@
 */
 
 #define  APP_TASK_START_PRIO                        26      /* 起始任务                                  */
+#define  APP_TASK_BLINK_PRIO                        28      /* 闪灯测试任务（验证用，后续可删）            */
 
 /* 以下为后续 OTA/数据采集任务预留优先级（暂未创建）*/
 #define  APP_TASK_OTA_PRIO                          12      /* OTA 任务（较高优先级，升级期间抢占）       */
@@ -47,6 +48,7 @@
 */
 
 #define  APP_TASK_START_STK_SIZE                    272     /* 起始任务栈                                */
+#define  APP_TASK_BLINK_STK_SIZE                    128     /* 闪灯测试任务栈 512B                        */
 
 /* 以下为后续任务预留栈（暂未使用）*/
 #define  APP_TASK_OTA_STK_SIZE                      512     /* OTA 任务栈 2KB（AES/HMAC 缓冲较大）        */

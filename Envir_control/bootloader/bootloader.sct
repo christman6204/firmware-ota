@@ -1,0 +1,19 @@
+; *************************************************************
+; ***          Bootloader Scatter Load Description           ***
+; ***  STM32F103VE 512KB Flash / 64KB RAM                   ***
+; ***  Bootloader: 0x08000000 ~ 0x0800BFFF (48KB)           ***
+; ***  App:        0x0800C000 ~ 0x0804BFFF (256KB)          ***
+; ***  参数区:      0x0804C000 ~ 0x0804CFFF (4KB)            ***
+; *************************************************************
+
+LR_IROM1 0x08000000 0x0000C000  {    ; 48KB Bootloader
+  ER_IROM1 0x08000000 0x0000C000  {  ; code + RO data
+   *.o (RESET, +First)
+   *(InRoot$$Sections)
+   .ANY (+RO)
+   .ANY (+XO)
+  }
+  RW_IRAM1 0x20000000 0x00010000  {  ; 64KB RAM
+   .ANY (+RW +ZI)
+  }
+}

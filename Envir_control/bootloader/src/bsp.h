@@ -2,7 +2,7 @@
 *********************************************************************************************************
 *                                        BOARD SUPPORT PACKAGE
 *
-*                                       STM32F103VE + uC/OS-III
+*                                        Bootloader (bare-metal)
 *
 * Filename      : bsp.h
 *********************************************************************************************************
@@ -11,15 +11,7 @@
 #ifndef  BSP_PRESENT
 #define  BSP_PRESENT
 
-#ifdef   BSP_MODULE
-#define  BSP_EXT
-#else
-#define  BSP_EXT  extern
-#endif
-
 #include "stm32f10x.h"
-#include  <os.h>
-
 
 /*
 *********************************************************************************************************
@@ -38,11 +30,11 @@
 
 /*
 *********************************************************************************************************
-*                                            GLOBAL VARIABLES
+*                                      JUMP TO APPLICATION
 *********************************************************************************************************
 */
 
-BSP_EXT CPU_INT32U  cpu_clk_freq;
+#define  APP_ADDRESS             0x0800C000u   /* App 固件起始地址（与设计文档一致） */
 
 
 /*
@@ -51,9 +43,9 @@ BSP_EXT CPU_INT32U  cpu_clk_freq;
 *********************************************************************************************************
 */
 
-void         BSP_Init                    (void);
-void         BSP_LED_Init                (void);
-CPU_INT32U   BSP_CPU_ClkFreq             (void);
-void         SoftReset                   (void);
+void  BSP_Init      (void);
+void  BSP_LED_Init  (void);
+void  JumpToApp     (void);
+void  SoftReset     (void);
 
 #endif
