@@ -303,10 +303,12 @@ device/config/ack/{dev_id}      # 配置下发结果上报（ESP 收到 STM32 CM
 #### 片内 flash
 
 ```
-0x0800_0000  Bootloader  (48KB)   永不升级，出厂烧录
-0x0800_C000  App         (256KB)  OTA 目标
-0x0804_C000  参数区      (4KB)    状态机 + 版本 + 升级标志
+0x0800_0000  Bootloader  (48KB = 24页)   永不升级，出厂烧录
+0x0800_C000  App         (256KB = 128页)  OTA 目标
+0x0804_C000  参数区      (4KB = 2页)     状态机 + 版本 + 升级标志
 ```
+
+> **片内 flash 页大小 = 2KB**（STM32F103VE high-density）。擦除最小单位 2KB，编程最小单位 16-bit。参数区结构体仅 64 字节，占第一页头部，第二页预留。
 
 > 合计 48 + 256 + 4 = 308KB，STM32F103VE 片内 flash 共 512KB，剩余 204KB 可用。App 区上限即 256KB。
 
