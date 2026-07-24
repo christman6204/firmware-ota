@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "WebFetch(domain:www.gd32mcu.com)",
+      "WebFetch(domain:github.com)",
+      "Bash(git clone *)",
+      "Bash(powershell *)",
+      "Bash(python3 -c \"import py7zr; print\\('py7zr available'\\)\")",
+      "Bash(pip install *)",
+      "Bash(python3 *)",
+      "Bash(/c/Python314/python *)",
+      "Bash(grep -v '^[[:space:]]*<FilePath>$')",
+      "Bash(grep -v '^[[:space:]]*<IncludePath>$')",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(gh api *)",
+      "Bash(git config *)",
+      "Bash(gh repo *)",
+      "Bash(python -c ' *)"
+    ]
+  }
+}
