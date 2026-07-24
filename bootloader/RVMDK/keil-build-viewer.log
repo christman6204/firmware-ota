@@ -1,0 +1,112 @@
+
+=================================================== keil-build-viewer v1.6 ==================================================
+ 
+[Search keil project] 1 item(s)
+	D:\claude\514\bootloader\RVMDK\Bootloader.uvprojx
+
+[User input] 
+[Current folder] D:\claude\514\bootloader\RVMDK
+[Encoding] 936
+[Keil project path] D:\claude\514\bootloader\RVMDK\Bootloader.uvprojx
+[Keil project name] Bootloader.uvprojx
+[Is keil v4] 0
+[target name] Bootloader
+[final target name] Bootloader
+
+[Device] STM32F103VE
+[Target name] 
+[Output name] bootloader
+[Output path] .\Objects\
+[Listing path] .\Listings\
+[Is has pack] 1
+[Is enbale LTO] 0
+[Is has user library] 0
+[Is custom scatter file] 1
+
+[Bootloader.uvprojx]  [Bootloader]  [STM32F103VE]  [LTO disable]
+ 
+[memory info]
+[name] IRAM [base addr] 0x20000000 [size] 0x00010000 [type] 1 [off-chip] 0 [is pack] 1 [ID] 2 
+[name] IROM [base addr] 0x08000000 [size] 0x00080000 [type] 2 [off-chip] 0 [is pack] 1 [ID] 3 
+
+
+[map file path] D:\claude\514\bootloader\RVMDK\Listings\bootloader.map
+
+[region info]
+[load region] LR_IROM1
+	[execution region] ER_IROM1, 0x08000000, 0x0000C000, 0x0000055C [memory type] 2 [memory ID] 3
+
+	[execution region] RW_IRAM1, 0x20000000, 0x00010000, 0x00000400 [memory type] 1 [memory ID] 2
+		[ZI block] addr: 0x20000000, size: 0x00000400 (1024)
+
+
+[object name max length] 22
+[object path max length] 49
+
+[object in map file]
+[object name] bsp.o                   [path] ..\src\bsp.c
+[object name] core_cm3.o              [path] ..\Libraries\CMSIS\core_cm3.c
+[object name] main.o                  [path] ..\src\main.c
+[object name] startup_stm32f10x_hd.o  [path] ..\Libraries\CMSIS\startup\startup_stm32f10x_hd.s
+[object name] stm32f10x_gpio.o        [path] ..\Libraries\FWlib\src\stm32f10x_gpio.c
+[object name] stm32f10x_it.o          [path] ..\src\stm32f10x_it.c
+[object name] stm32f10x_rcc.o         [path] ..\Libraries\FWlib\src\stm32f10x_rcc.c
+[object name] system_stm32f10x.o      [path] ..\Libraries\CMSIS\system_stm32f10x.c
+
+[file path in keil project]
+[old name] startup_stm32f10x_hd.s  [type] 1   [path] ..\Libraries\CMSIS\startup\startup_stm32f10x_hd.s
+[old name] core_cm3.c              [type] 1   [path] ..\Libraries\CMSIS\core_cm3.c
+[old name] system_stm32f10x.c      [type] 1   [path] ..\Libraries\CMSIS\system_stm32f10x.c
+[old name] misc.c                  [type] 1   [path] ..\Libraries\FWlib\src\misc.c
+[old name] stm32f10x_adc.c         [type] 1   [path] ..\Libraries\FWlib\src\stm32f10x_adc.c
+[old name] stm32f10x_bkp.c         [type] 1   [path] ..\Libraries\FWlib\src\stm32f10x_bkp.c
+[old name] stm32f10x_can.c         [type] 1   [path] ..\Libraries\FWlib\src\stm32f10x_can.c
+[old name] stm32f10x_cec.c         [type] 1   [path] ..\Libraries\FWlib\src\stm32f10x_cec.c
+[old name] stm32f10x_crc.c         [type] 1   [path] ..\Libraries\FWlib\src\stm32f10x_crc.c
+[old name] stm32f10x_dac.c         [type] 1   [path] ..\Libraries\FWlib\src\stm32f10x_dac.c
+[old name] stm32f10x_dbgmcu.c      [type] 1   [path] ..\Libraries\FWlib\src\stm32f10x_dbgmcu.c
+[old name] stm32f10x_dma.c         [type] 1   [path] ..\Libraries\FWlib\src\stm32f10x_dma.c
+[old name] stm32f10x_exti.c        [type] 1   [path] ..\Libraries\FWlib\src\stm32f10x_exti.c
+[old name] stm32f10x_flash.c       [type] 1   [path] ..\Libraries\FWlib\src\stm32f10x_flash.c
+[old name] stm32f10x_fsmc.c        [type] 1   [path] ..\Libraries\FWlib\src\stm32f10x_fsmc.c
+[old name] stm32f10x_gpio.c        [type] 1   [path] ..\Libraries\FWlib\src\stm32f10x_gpio.c
+[old name] stm32f10x_i2c.c         [type] 1   [path] ..\Libraries\FWlib\src\stm32f10x_i2c.c
+[old name] stm32f10x_iwdg.c        [type] 1   [path] ..\Libraries\FWlib\src\stm32f10x_iwdg.c
+[old name] stm32f10x_pwr.c         [type] 1   [path] ..\Libraries\FWlib\src\stm32f10x_pwr.c
+[old name] stm32f10x_rcc.c         [type] 1   [path] ..\Libraries\FWlib\src\stm32f10x_rcc.c
+[old name] stm32f10x_rtc.c         [type] 1   [path] ..\Libraries\FWlib\src\stm32f10x_rtc.c
+[old name] stm32f10x_sdio.c        [type] 1   [path] ..\Libraries\FWlib\src\stm32f10x_sdio.c
+[old name] stm32f10x_spi.c         [type] 1   [path] ..\Libraries\FWlib\src\stm32f10x_spi.c
+[old name] stm32f10x_tim.c         [type] 1   [path] ..\Libraries\FWlib\src\stm32f10x_tim.c
+[old name] stm32f10x_usart.c       [type] 1   [path] ..\Libraries\FWlib\src\stm32f10x_usart.c
+[old name] stm32f10x_wwdg.c        [type] 1   [path] ..\Libraries\FWlib\src\stm32f10x_wwdg.c
+[old name] main.c                  [type] 1   [path] ..\src\main.c
+[old name] bsp.c                   [type] 1   [path] ..\src\bsp.c
+[old name] stm32f10x_it.c          [type] 1   [path] ..\src\stm32f10x_it.c
+-------------------------------------------------------------------------------------------------------------
+                        FILE(s)                       |         RAM (byte)       |       FLASH (byte)       |
+-------------------------------------------------------------------------------------------------------------
+..\src\bsp.c():                                       |           0              |         124              |
+..\Libraries\CMSIS\core_cm3.c():                      |           0              |          32              |
+..\src\main.c():                                      |           0              |         100              |
+..\Libraries\CMSIS\startup\startup_stm32f10x_hd.s():  |        1024              |         340              |
+..\Libraries\FWlib\src\stm32f10x_gpio.c():            |           0              |         286              |
+..\src\stm32f10x_it.c():                              |           0              |          24              |
+..\Libraries\FWlib\src\stm32f10x_rcc.c():             |           0              |          32              |
+..\Libraries\CMSIS\system_stm32f10x.c():              |           0              |         328              |
+-------------------------------------------------------------------------------------------------------------
+[memory print mode]: 0
+LR_IROM1
+        RAM 1             [0x20000000 | 0x00010000 (65536)]
+                [zi start] 0   [zi end] 0
+                RW_IRAM1  [0x20000000]|¡ö_________________________________________________| (   1.0 KB /  64.0 KB )   1.6%  
+ 
+        FLASH 1           [0x08000000 | 0x00080000 (524288)]
+                ER_IROM1  [0x08000000]|¡ö_________________________________________________| (   1.3 KB /  48.0 KB )   2.8%  
+ 
+[htm file path] D:\claude\514\bootloader\RVMDK\Objects\bootloader.htm
+Maximum Stack Usage =         40 bytes + Unknown(Cycles, Untraceable Function Pointers)
+ 
+=============================================================================================================================
+
+run time: 0.029 s

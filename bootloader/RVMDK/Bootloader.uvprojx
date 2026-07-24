@@ -550,37 +550,29 @@
             </File>
           </Files>
         </Group>
-        
-        
-        
-        
-        
-        
-        
-        
-            <Group>
-        <GroupName>Bootloader</GroupName>
-        <Files>
-          <File>
-            <FileName>main.c</FileName>
-            <FileType>1</FileType>
-            <FilePath>..\src\main.c</FilePath>
-          </File>
-          <File>
-            <FileName>bsp.c</FileName>
-            <FileType>1</FileType>
-            <FilePath>..\src\bsp.c</FilePath>
-          </File>
-          <File>
-            <FileName>stm32f10x_it.c</FileName>
-            <FileType>1</FileType>
-            <FilePath>..\src\stm32f10x_it.c</FilePath>
-          </File>
-        </Files>
-      </Group>
-    </Groups>
+        <Group>
+          <GroupName>Bootloader</GroupName>
+          <Files>
+            <File>
+              <FileName>main.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\src\main.c</FilePath>
+            </File>
+            <File>
+              <FileName>bsp.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\src\bsp.c</FilePath>
+            </File>
+            <File>
+              <FileName>stm32f10x_it.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\src\stm32f10x_it.c</FilePath>
+            </File>
+          </Files>
+        </Group>
+      </Groups>
     </Target>
-    </Targets>
+  </Targets>
 
   <RTE>
     <apis/>

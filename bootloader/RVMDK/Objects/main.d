@@ -1,0 +1,12 @@
+.\objects\main.o: ..\src\main.c
+.\objects\main.o: ..\Libraries\CMSIS\stm32f10x.h
+.\objects\main.o: ..\Libraries\CMSIS\core_cm3.h
+.\objects\main.o: C:\Keil_v5\ARM\ARMCC\Bin\..\include\stdint.h
+.\objects\main.o: ..\Libraries\CMSIS\system_stm32f10x.h
+.\objects\main.o: ..\..\bootloader\src\stm32f10x_conf.h
+.\objects\main.o: ..\Libraries\FWlib\inc\stm32f10x_gpio.h
+.\objects\main.o: ..\Libraries\CMSIS\stm32f10x.h
+.\objects\main.o: ..\Libraries\FWlib\inc\stm32f10x_rcc.h
+.\objects\main.o: ..\Libraries\FWlib\inc\stm32f10x_flash.h
+.\objects\main.o: ..\Libraries\FWlib\inc\misc.h
+.\objects\main.o: ..\src\bsp.h

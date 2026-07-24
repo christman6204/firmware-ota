@@ -1,0 +1,102 @@
+<html>
+<body>
+<pre>
+<h1>µVision Build Log</h1>
+<h2>Tool Versions:</h2>
+IDE-Version: ¦ÌVision V5.31.0.0
+Copyright (C) 2020 ARM Ltd and ARM Germany GmbH. All rights reserved.
+License Information: 2 XJJ, 2, LIC=47GU5-G7PCA-63QMB-22U8V-1FV8A-7CIDW
+ 
+Tool Versions:
+Toolchain:       MDK-ARM Plus  Version: 5.31.0.0
+Toolchain Path:  C:\Keil_v5\ARM\ARMCC\Bin
+C Compiler:      Armcc.exe V5.06 update 6 (build 750)
+Assembler:       Armasm.exe V5.06 update 6 (build 750)
+Linker/Locator:  ArmLink.exe V5.06 update 6 (build 750)
+Library Manager: ArmAr.exe V5.06 update 6 (build 750)
+Hex Converter:   FromElf.exe V5.06 update 6 (build 750)
+CPU DLL:         SARMCM3.DLL V5.31.0.0
+Dialog DLL:      DCM.DLL V1.17.3.0
+Target DLL:      UL2CM3.DLL V1.163.4.0
+Dialog DLL:      TCM.DLL V1.46.0.0
+ 
+<h2>Project:</h2>
+D:\claude\514\bootloader\RVMDK\Bootloader.uvprojx
+Project File Date:  07/24/2026
+
+<h2>Output:</h2>
+*** Using Compiler 'V5.06 update 6 (build 750)', folder: 'C:\Keil_v5\ARM\ARMCC\Bin'
+Build target 'Bootloader'
+compiling stm32f10x_cec.c...
+compiling misc.c...
+compiling stm32f10x_bkp.c...
+compiling stm32f10x_dma.c...
+compiling system_stm32f10x.c...
+compiling stm32f10x_dac.c...
+compiling stm32f10x_dbgmcu.c...
+compiling stm32f10x_crc.c...
+compiling stm32f10x_exti.c...
+compiling stm32f10x_flash.c...
+compiling stm32f10x_fsmc.c...
+compiling stm32f10x_can.c...
+compiling stm32f10x_adc.c...
+compiling stm32f10x_gpio.c...
+compiling stm32f10x_i2c.c...
+compiling stm32f10x_iwdg.c...
+compiling stm32f10x_pwr.c...
+compiling stm32f10x_rtc.c...
+compiling stm32f10x_rcc.c...
+compiling stm32f10x_sdio.c...
+compiling stm32f10x_spi.c...
+compiling stm32f10x_wwdg.c...
+compiling stm32f10x_usart.c...
+compiling main.c...
+compiling bsp.c...
+compiling stm32f10x_tim.c...
+linking...
+Program Size: Code=1052 RO-data=320 RW-data=0 ZI-data=1024  
+FromELF: creating hex file...
+After Build - User command #1: keil-build-viewer.exe
+=================================================== keil-build-viewer v1.6 ==================================================
+ 
+[Bootloader.uvprojx]  [Bootloader]  [STM32F103VE]  [LTO disable]
+ 
+-------------------------------------------------------------------------------------------------------------
+                        FILE(s)                       |         RAM (byte)       |       FLASH (byte)       |
+-------------------------------------------------------------------------------------------------------------
+..\src\bsp.c():                                       |           0              |         124              |
+..\Libraries\CMSIS\core_cm3.c():                      |           0              |          32              |
+..\src\main.c():                                      |           0              |         100              |
+..\Libraries\CMSIS\startup\startup_stm32f10x_hd.s():  |        1024              |         340              |
+..\Libraries\FWlib\src\stm32f10x_gpio.c():            |           0              |         286              |
+..\src\stm32f10x_it.c():                              |           0              |          24              |
+..\Libraries\FWlib\src\stm32f10x_rcc.c():             |           0              |          32              |
+..\Libraries\CMSIS\system_stm32f10x.c():              |           0              |         328              |
+-------------------------------------------------------------------------------------------------------------
+LR_IROM1
+        RAM 1             [0x20000000 | 0x00010000 (65536)]
+                RW_IRAM1  [0x20000000]|¡ö_________________________________________________| (   1.0 KB /  64.0 KB )   1.6%  
+ 
+        FLASH 1           [0x08000000 | 0x00080000 (524288)]
+                ER_IROM1  [0x08000000]|¡ö_________________________________________________| (   1.3 KB /  48.0 KB )   2.8%  
+ 
+Maximum Stack Usage =         40 bytes + Unknown(Cycles, Untraceable Function Pointers)
+ 
+=============================================================================================================================
+".\Objects\bootloader.axf" - 0 Error(s), 0 Warning(s).
+
+<h2>Software Packages used:</h2>
+
+Package Vendor: Keil
+                https://www.keil.com/pack/Keil.STM32F1xx_DFP.2.4.1.pack
+                Keil.STM32F1xx_DFP.2.4.1
+                STMicroelectronics STM32F1 Series Device Support, Drivers and Examples
+
+<h2>Collection of Component include folders:</h2>
+  C:\Users\XJJ\AppData\Local\Arm\Packs\Keil\STM32F1xx_DFP\2.4.1\Device\Include
+
+<h2>Collection of Component Files used:</h2>
+Build Time Elapsed:  00:00:01
+</pre>
+</body>
+</html>
