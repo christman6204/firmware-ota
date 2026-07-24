@@ -319,7 +319,9 @@ typedef struct {
   uint8_t  state;           // OTA 状态机: IDLE/DOWNLOADING/DOWNLOADED/UPGRADE_REQUESTED/UPGRADING
   uint8_t  app_healthy;     // 启动确认标志（新 App 启动成功后置 1）
   uint8_t  upgrade_flag;    // 触发 Bootloader 升级标志
-  uint8_t  reserved;
+  uint8_t  upgrade_result;  // Bootloader 写入的升级结果码（App 读取上报后清零）
+                            //   0=无/1=成功/2=验签失败/3=备份失败/4=SPI错误/5=写入失败已回滚/6=启动失败已回滚
+  uint8_t  task_id[16];     // 当前 OTA 任务 ID（CMD 0x03 收到时写入；App 上报 CMD 0x09 后清零）
   char     cur_version[16]; // 当前运行的 App 版本
   char     new_version[16]; // 升级目标版本（升级完成后移入 cur_version）
   uint32_t crc32;           // 本结构体校验（覆盖 magic~new_version）
@@ -329,6 +331,8 @@ typedef struct {
 > - `receive_offset` **不在**参数区，在片外 flash 新固件头里（§7.1 片外布局）。
 > - 参数区只在**状态迁移时**写入（每次 OTA 寥寥几次），不高频写，flash 寿命无忧。
 > - 写入用"先写后校验"（写完回读比对 `crc32`），防掉电写半。
+> - **`task_id` 生命周期**：CMD 0x03（开始升级）时 App 写入 → Bootloader 不修改 → 升级结束后 App 读取并经 CMD 0x09 上报云端 → 上报成功后清零。
+> - **`upgrade_result` 生命周期**：Bootloader 在中止/完成时写入具体错误码 → App 启动后读取 → 经 CMD 0x09（result 字段）上报云端 → 上报成功后清零。若 `upgrade_result != 0 && state == IDLE`，App 可知"升级曾尝试但失败"及失败原因。
 
 #### 片外 SPI flash（如 W25Q64 8MB）
 
@@ -354,6 +358,16 @@ UART DMA 接收 + 空闲中断 -> 解帧 -> OTA 状态机
   干净失败（CRC 错/写 flash 错/重传超限）-> IDLE + 上报错误
   下载中途断电（非干净失败）-> 状态保持 DOWNLOADING，receive_offset 已在片外固件头持久化
                               -> 重启后 ESP 查 offset 用 Range 续传，不回 IDLE
+
+收到开始升级 (CMD 0x03):
+  1. 解析 task_id + version + size
+  2. 写入参数区：task_id[16]、new_version、state = DOWNLOADING
+  3. 回 CMD 0x04 ACK（start_offset = 已有 receive_offset，0 为全新）
+
+App 启动时（含升级后重启）:
+  1. 读参数区 upgrade_result：若 != 0，经 CMD 0x09 上报云端（task_id + result + version），然后清零
+  2. 读参数区 app_healthy 相关逻辑（见 §7.3 步骤 3）
+  3. 进入正常业务 + OTA 后台任务
 
 收到固件块 (CMD 0x05):
   1. 解析 offset + data
@@ -386,12 +400,12 @@ Bootloader 不涉及 UART 协议，集中负责备份片内、读片外新固件
 上电:
   1. 读参数区状态
   2. if state == UPGRADE_REQUESTED:
-     a. 读片外新固件头: size（blob 总长，含 IV+密文+HMAC）；若读取失败（SPI 超时等），中止升级，state = IDLE，跳转当前 App
+     a. 读片外新固件头: size（blob 总长，含 IV+密文+HMAC）；若读取失败（SPI 超时等），写 upgrade_result=4，state = IDLE，跳转当前 App
         * IV    = 新固件区[0 : 16]            # blob 首 16B
         * HMAC  = 新固件区[size-32 : size]    # blob 末 32B
         * 密文  = 新固件区[16 : size-32]
      b. 【先验签 verify-before-write】流式读 blob [IV + 密文]，增量算 HMAC-SHA256，比对 blob 末 32B：
-        * 失败 -> 片内 flash 未动（当前 App 完好），上报"固件校验失败"，state = IDLE，跳转当前 App（无需回滚）
+        * 失败 -> 片内 flash 未动（当前 App 完好），写 upgrade_result=2，state = IDLE，跳转当前 App（无需回滚）
         * 通过 -> 继续
      c. 验签通过后，检查片外备份区 magic:
         - magic 不存在: 备份片内 App (加密备份)
@@ -400,7 +414,7 @@ Bootloader 不涉及 UART 协议，集中负责备份片内、读片外新固件
           * 计算备份 HMAC, 拼接备份 blob [IV + 密文 + HMAC] 写入备份区
           * 写备份固件头 (backup_magic + size + version)
           * 写 magic
-          * **备份过程中任何一步失败 -> 中止升级，state = IDLE，跳转当前 App（片内 App 未动，完整无损）
+          * **备份过程中任何一步失败 -> 写 upgrade_result=3，state = IDLE，跳转当前 App（片内 App 未动，完整无损）
         - magic 存在: 跳过备份 (上次已备份,这是断电重入)
      d. 擦除片内 App 区
      e. 流式解密写入:
@@ -408,15 +422,15 @@ Bootloader 不涉及 UART 协议，集中负责备份片内、读片外新固件
         * AES-256-CTR 解密 (主密钥 + 新固件区 IV) -> 1KB 明文
         * 写片内 flash 1KB 明文
         * 循环
-        * 写入失败 -> 从备份区读密文 blob -> 解密 (备份 IV, 在备份区[0:16]) -> 写片内明文 -> state = IDLE -> 跳转
-     f. 全部成功: state = UPGRADING, new_version 移入 cur_version, 清备份 magic, 启动 IWDG(30s), 跳转
+        * 写入失败 -> 从备份区读密文 blob -> 解密 (备份 IV, 在备份区[0:16]) -> 写片内明文 -> 写 upgrade_result=5 -> state = IDLE -> 跳转
+     f. 全部成功: 写 upgrade_result=1, state = UPGRADING, new_version 移入 cur_version, 清备份 magic, 启动 IWDG(30s), 跳转
      （验签已在 b 前置完成；c~e 任一步掉电，重启后从 b 重新验签→续做，全程幂等）
   3. elif state == UPGRADING (上次刚升级完,等 App 确认):
      - Bootloader 跳转前已启动 IWDG 独立看门狗 (30s)
      - 新 App 正常启动后写 "app_healthy" 标志并喂狗; Bootloader 不再运行
      - App 未在 30s 内写 app_healthy -> IWDG 超时复位 MCU
      - 复位后 Bootloader 见 state==UPGRADING:
-       * app_healthy == 0: App 未确认（启动失败）-> 从备份区回滚 -> state = IDLE -> 跳转
+       * app_healthy == 0: App 未确认（启动失败）-> 从备份区回滚 -> 写 upgrade_result=6 -> state = IDLE -> 跳转
        * app_healthy == 1: App 已确认但断电在清标志前 -> 判定健康 -> 清 app_healthy, state = IDLE -> 跳转
      - App 正常确认后清 app_healthy, state = IDLE (回到正常态)
   4. else: 直接跳转 App
@@ -567,7 +581,7 @@ while (offset < total_size) {
 | `state` / `result` | uint8，1 字节 |
 | `version` 字符串 | 长度前缀：`ver_len[1] + utf8[ver_len]`，最长 31 字节 |
 | `task_id` | 16 字节定长（UUID 二进制，不足补 0） |
-| `dev_id`（CMD 0x10） | uint32 大端，4 字节（STM32 出厂烧录的全链路唯一机器标识；ESP 从帧读取后用于拼 MQTT topic，自身不持有） |
+| `dev_id`（CMD 0x10） | uint32 大端，4 字节（STM32 出厂烧录的全链路唯一机器标识；权威来源为 STM32 帧头，ESP 持有产线烧录的认证副本用于 MQTT CONNECT，转发时从帧头读取拼 topic） |
 | CRC16-Modbus | 多项式 0xA001（即 0x8005 反射），初值 0xFFFF，输入/输出均反射；`CRC16_HI` 为高字节 |
 
 ### 命令表
