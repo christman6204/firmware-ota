@@ -12,7 +12,7 @@
 #include "stm32f10x_gpio.h"
 #include "stm32f10x_rcc.h"
 #include "stm32f10x_flash.h"
-#include "stm32f10x_misc.h"
+#include "misc.h"
 
 #ifdef  USE_FULL_ASSERT
   #define assert_param(expr) ((expr) ? (void)0 : assert_failed((uint8_t *)__FILE__, __LINE__))
