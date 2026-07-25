@@ -23,7 +23,7 @@
 #define UID_ID_LEN       16u
 
 /* ---- 主密钥固定地址 (与 bootloader/src/crypto.c __at(0x0800BF20) 一致) ---- */
-#define HMAC_KEY_ADDR    ((const uint8_t *)0x0800BF20u)
+#define HMAC_KEY_ADDR    ((const uint8_t *)0x0800BFA8u)  /* bootloader key area offset 168 */
 
 void uid_verify(void)
 {

@@ -72,7 +72,7 @@
  * - ⚠ **当前为全零占位值, 正式投产前必须替换为随机生成的安全密钥**
  * - 生成方式建议: `openssl rand -hex 32` 或 STM32 片内 TRNG 外设
  */
-const uint8_t BOOT_MASTER_AES_KEY[32]  __attribute__((at(0x0800BF00))) = {0};
+const uint8_t BOOT_MASTER_AES_KEY[32]  __attribute__((at(0x0800BF88))) = {0};
 
 /**
  * @brief  HMAC-SHA256 主密钥 (32 字节)
@@ -81,7 +81,7 @@ const uint8_t BOOT_MASTER_AES_KEY[32]  __attribute__((at(0x0800BF00))) = {0};
  * - 存储位置与保护方式同 BOOT_MASTER_AES_KEY
  * - ⚠ **当前为全零占位值, 正式投产前必须替换**
  */
-const uint8_t BOOT_MASTER_HMAC_KEY[32] __attribute__((at(0x0800BF20))) = {0};
+const uint8_t BOOT_MASTER_HMAC_KEY[32] __attribute__((at(0x0800BFA8))) = {0};
 
 /* ============================ 全局上下文（静态变量） ============================ */
 
