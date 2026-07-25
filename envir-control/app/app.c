@@ -11,6 +11,7 @@
 */
 
 #include <includes.h>
+#include "uid_verify.h"
 
 
 /*
@@ -61,6 +62,8 @@ static  void  AppTaskBlink  (void *p_arg);
 int  main (void)
 {
     OS_ERR  err;
+
+    uid_verify();  /* 设备防克隆验证 —— 必须在所有初始化之前 (设计文档 §7.5) */
 
     OSInit(&err);
 

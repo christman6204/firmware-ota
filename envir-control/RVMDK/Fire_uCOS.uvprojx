@@ -339,7 +339,7 @@
               <MiscControls>--no-multibyte-chars</MiscControls>
               <Define>STM32F10X_HD, USE_STDPERIPH_DRIVER,DEBUG_APP</Define>
               <Undefine></Undefine>
-              <IncludePath>..\Libraries\CMSIS;..\Libraries\FWlib\inc;..;..\app;..\app;..\bsp;..\uc-cpu;..\uc-cpu\ARM-Cortex-M3\RealView;..\uc-lib;..\ucos-iii\Source;..\ucos-iii\Ports\ARM-Cortex-M3\Generic\RealView;</IncludePath>
+              <IncludePath>..\Libraries\CMSIS;..\Libraries\FWlib\inc;..;..\app;..\app;..\bsp;..\uc-cpu;..\uc-cpu\ARM-Cortex-M3\RealView;..\uc-lib;..\ucos-iii\Source;..\ucos-iii\Ports\ARM-Cortex-M3\Generic\RealView;..\Libraries\mbedtls\include</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -618,7 +618,12 @@
               <FileType>5</FileType>
               <FilePath>..\app\os_cfg_app.h</FilePath>
             </File>
-          </Files>
+                    <File>
+            <FileName>uid_verify.c</FileName>
+            <FileType>1</FileType>
+            <FilePath>..pp\uid_verify.c</FilePath>
+          </File>
+        </Files>
         </Group>
         <Group>
           <GroupName>BSP</GroupName>
@@ -853,7 +858,18 @@
         <Group>
           <GroupName>Task</GroupName>
         </Group>
-      </Groups>
+            <Group>
+        <GroupName>mbedtls</GroupName>
+        <Files>
+          <File><FileName>aes.c</FileName><FileType>1</FileType><FilePath>..\Libraries\mbedtls\libraryes.c</FilePath></File>
+          <File><FileName>sha256.c</FileName><FileType>1</FileType><FilePath>..\Libraries\mbedtls\library\sha256.c</FilePath></File>
+          <File><FileName>md.c</FileName><FileType>1</FileType><FilePath>..\Libraries\mbedtls\library\md.c</FilePath></File>
+          <File><FileName>platform.c</FileName><FileType>1</FileType><FilePath>..\Libraries\mbedtls\library\platform.c</FilePath></File>
+          <File><FileName>platform_util.c</FileName><FileType>1</FileType><FilePath>..\Libraries\mbedtls\library\platform_util.c</FilePath></File>
+        </Files>
+      </Group>
+
+    </Groups>
     </Target>
     <Target>
       <TargetName>factory_app</TargetName>
@@ -1188,7 +1204,7 @@
               <MiscControls></MiscControls>
               <Define>STM32F10X_HD, USE_STDPERIPH_DRIVER,BT_APP</Define>
               <Undefine></Undefine>
-              <IncludePath>..\Libraries\CMSIS;..\Libraries\FWlib\inc;..;..\app;..\app;..\bsp;..\uc-cpu;..\uc-cpu\ARM-Cortex-M3\RealView;..\uc-lib;..\ucos-iii\Source;..\ucos-iii\Ports\ARM-Cortex-M3\Generic\RealView;</IncludePath>
+              <IncludePath>..\Libraries\CMSIS;..\Libraries\FWlib\inc;..;..\app;..\app;..\bsp;..\uc-cpu;..\uc-cpu\ARM-Cortex-M3\RealView;..\uc-lib;..\ucos-iii\Source;..\ucos-iii\Ports\ARM-Cortex-M3\Generic\RealView;;..\Libraries\mbedtls\include</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -2037,7 +2053,7 @@
               <MiscControls></MiscControls>
               <Define>STM32F10X_HD, USE_STDPERIPH_DRIVER,UPDATA_APP</Define>
               <Undefine></Undefine>
-              <IncludePath>..\Libraries\CMSIS;..\Libraries\FWlib\inc;..;..\app;..\app;..\bsp;..\uc-cpu;..\uc-cpu\ARM-Cortex-M3\RealView;..\uc-lib;..\ucos-iii\Source;..\ucos-iii\Ports\ARM-Cortex-M3\Generic\RealView;</IncludePath>
+              <IncludePath>..\Libraries\CMSIS;..\Libraries\FWlib\inc;..;..\app;..\app;..\bsp;..\uc-cpu;..\uc-cpu\ARM-Cortex-M3\RealView;..\uc-lib;..\ucos-iii\Source;..\ucos-iii\Ports\ARM-Cortex-M3\Generic\RealView;;..\Libraries\mbedtls\include</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
