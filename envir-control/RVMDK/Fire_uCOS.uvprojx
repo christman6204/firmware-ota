@@ -336,7 +336,7 @@
             <v6WtE>0</v6WtE>
             <v6Rtti>0</v6Rtti>
             <VariousControls>
-              <MiscControls>--no-multibyte-chars</MiscControls>
+              <MiscControls>--no-multibyte-chars --c99</MiscControls>
               <Define>STM32F10X_HD, USE_STDPERIPH_DRIVER,DEBUG_APP</Define>
               <Undefine></Undefine>
               <IncludePath>..\Libraries\CMSIS;..\Libraries\FWlib\inc;..;..\app;..\app;..\bsp;..\uc-cpu;..\uc-cpu\ARM-Cortex-M3\RealView;..\uc-lib;..\ucos-iii\Source;..\ucos-iii\Ports\ARM-Cortex-M3\Generic\RealView;..\Libraries\mbedtls\include</IncludePath>
@@ -354,7 +354,7 @@
             <useXO>0</useXO>
             <ClangAsOpt>4</ClangAsOpt>
             <VariousControls>
-              <MiscControls></MiscControls>
+              <MiscControls>--c99</MiscControls>
               <Define></Define>
               <Undefine></Undefine>
               <IncludePath></IncludePath>
@@ -618,12 +618,12 @@
               <FileType>5</FileType>
               <FilePath>..\app\os_cfg_app.h</FilePath>
             </File>
-                    <File>
-            <FileName>uid_verify.c</FileName>
-            <FileType>1</FileType>
-            <FilePath>..\app\uid_verify.c</FilePath>
-          </File>
-        </Files>
+            <File>
+              <FileName>uid_verify.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\app\uid_verify.c</FilePath>
+            </File>
+          </Files>
         </Group>
         <Group>
           <GroupName>BSP</GroupName>
@@ -858,20 +858,38 @@
         <Group>
           <GroupName>Task</GroupName>
         </Group>
-            <Group>
-        <GroupName>mbedtls</GroupName>
-        <Files>
-          <File><FileName>aes.c</FileName><FileType>1</FileType><FilePath>..\Libraries\mbedtls\library\aes.c</FilePath></File>
-          <File><FileName>sha256.c</FileName><FileType>1</FileType><FilePath>..\Libraries\mbedtls\library\sha256.c</FilePath></File>
-          <File><FileName>md.c</FileName><FileType>1</FileType><FilePath>..\Libraries\mbedtls\library\md.c</FilePath></File>
-          <File><FileName>platform.c</FileName><FileType>1</FileType><FilePath>..\Libraries\mbedtls\library\platform.c</FilePath></File>
-          <File><FileName>platform_util.c</FileName><FileType>1</FileType><FilePath>..\Libraries\mbedtls\library\platform_util.c</FilePath></File>
-        </Files>
-      </Group>
-
-    </Groups>
+        <Group>
+          <GroupName>mbedtls</GroupName>
+          <Files>
+            <File>
+              <FileName>aes.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Libraries\mbedtls\library\aes.c</FilePath>
+            </File>
+            <File>
+              <FileName>sha256.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Libraries\mbedtls\library\sha256.c</FilePath>
+            </File>
+            <File>
+              <FileName>md.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Libraries\mbedtls\library\md.c</FilePath>
+            </File>
+            <File>
+              <FileName>platform.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Libraries\mbedtls\library\platform.c</FilePath>
+            </File>
+            <File>
+              <FileName>platform_util.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Libraries\mbedtls\library\platform_util.c</FilePath>
+            </File>
+          </Files>
+        </Group>
+      </Groups>
     </Target>
-    
     <Target>
       <TargetName>updata_app</TargetName>
       <ToolsetNumber>0x4</ToolsetNumber>
@@ -1202,7 +1220,7 @@
             <v6WtE>0</v6WtE>
             <v6Rtti>0</v6Rtti>
             <VariousControls>
-              <MiscControls></MiscControls>
+              <MiscControls>--c99</MiscControls>
               <Define>STM32F10X_HD, USE_STDPERIPH_DRIVER,UPDATA_APP</Define>
               <Undefine></Undefine>
               <IncludePath>..\Libraries\CMSIS;..\Libraries\FWlib\inc;..;..\app;..\app;..\bsp;..\uc-cpu;..\uc-cpu\ARM-Cortex-M3\RealView;..\uc-lib;..\ucos-iii\Source;..\ucos-iii\Ports\ARM-Cortex-M3\Generic\RealView;;..\Libraries\mbedtls\include</IncludePath>
@@ -1220,7 +1238,7 @@
             <useXO>0</useXO>
             <ClangAsOpt>4</ClangAsOpt>
             <VariousControls>
-              <MiscControls></MiscControls>
+              <MiscControls>--c99</MiscControls>
               <Define></Define>
               <Undefine></Undefine>
               <IncludePath></IncludePath>
@@ -1484,6 +1502,11 @@
               <FileType>5</FileType>
               <FilePath>..\app\os_cfg_app.h</FilePath>
             </File>
+            <File>
+              <FileName>uid_verify.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\app\uid_verify.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>
@@ -1718,6 +1741,36 @@
         </Group>
         <Group>
           <GroupName>Task</GroupName>
+        </Group>
+        <Group>
+          <GroupName>mbedtls</GroupName>
+          <Files>
+            <File>
+              <FileName>aes.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Libraries\mbedtls\library\aes.c</FilePath>
+            </File>
+            <File>
+              <FileName>sha256.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Libraries\mbedtls\library\sha256.c</FilePath>
+            </File>
+            <File>
+              <FileName>md.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Libraries\mbedtls\library\md.c</FilePath>
+            </File>
+            <File>
+              <FileName>platform.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Libraries\mbedtls\library\platform.c</FilePath>
+            </File>
+            <File>
+              <FileName>platform_util.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Libraries\mbedtls\library\platform_util.c</FilePath>
+            </File>
+          </Files>
         </Group>
       </Groups>
     </Target>

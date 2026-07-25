@@ -31,11 +31,10 @@ void uid_verify(void)
     uint8_t  calc[32];                             /* HMAC-SHA256 计算结果   */
     uint8_t  stored[UID_ID_LEN];                   /* bootloader 写入的加密ID */
     uint8_t  i;
+    mbedtls_md_context_t  ctx;                     /* mbedtls HMAC 上下文    */
 
     /* ---- Step 1: 读 UID 并计算 HMAC-SHA256(主密钥, UID) ---- */
     memcpy(uid, (const void *)UID_ADDR, UID_LEN);
-
-    mbedtls_md_context_t  ctx;
     mbedtls_md_init(&ctx);
     mbedtls_md_setup(&ctx, mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), 1);
     mbedtls_md_hmac_starts(&ctx, MASTER_HMAC_KEY, 32);
