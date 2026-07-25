@@ -22,7 +22,7 @@
 #include <stdint.h>
 
 /** 应用程序 Flash 起始地址 (向量表首地址) */
-#define APP_START_ADDR  0x0800C000u
+#define APP_START_ADDR  0x08010000u
 
 /** SRAM 基地址 (0x0800C000)，用于校验栈指针是否在合法 RAM 范围 */
 #define RAM_START       0x20000000u

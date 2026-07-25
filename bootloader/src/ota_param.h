@@ -4,7 +4,7 @@
 #include <stdint.h>
 
 /* 参数区地址 */
-#define OTA_PARAM_ADDR          0x0804C000u
+#define OTA_PARAM_ADDR          0x08058000u
 #define OTA_PARAM_PAGE_SIZE     2048u    /* STM32F103VE 页大小 2KB */
 #define OTA_PARAM_SIZE          4096u    /* 分配 4KB = 2 页 */
 

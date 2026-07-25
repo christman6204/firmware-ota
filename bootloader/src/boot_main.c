@@ -67,16 +67,16 @@
 #include <string.h>
 
 /* ---- 片内 App 区地址与大小 ---- */
-#define APP_AREA_START   0x0800C000u    /* App 起始地址 (设计文档 §7.1) */
-#define APP_AREA_SIZE_KB 256u           /* App 区大小 256KB */
+#define APP_AREA_START   0x08010000u    /* App 起始地址 (设计文档 §7.1) */
+#define APP_AREA_SIZE_KB 288u           /* App 区大小 256KB */
 #define BLOCK_SIZE       1024u          /* 流式处理块大小 1KB            */
 
 /* ---- UID 防克隆 (设计文档 §7.5) ---- */
 #define UID_ADDR        0x1FFFF7E8u    /* STM32F1 96-bit 唯一 ID 寄存器     */
 #define UID_LEN         12u            /* UID 长度 (字节)                   */
-#define UID_FLAG_ADDR   0x0807F000u    /* 加密标记位置 (508KB)              */
+#define UID_FLAG_ADDR   0x0800C000u    /* 加密标记位置 (508KB)              */
 #define UID_FLAG_VALUE  0x00001234u    /* 初始标记值: 0x1234               */
-#define UID_ID_ADDR     0x0807F800u    /* 加密 ID 存储位置 (510KB)          */
+#define UID_ID_ADDR     0x0800C800u    /* 加密 ID 存储位置 (510KB)          */
 #define UID_ID_LEN      16u            /* 加密 ID 长度 (HMAC-SHA256 前 16B) */
 
 /* ---- 内部函数声明 ---- */
