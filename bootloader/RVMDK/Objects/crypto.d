@@ -3,3 +3,11 @@
 .\objects\crypto.o: C:\Keil_v5\ARM\ARMCC\Bin\..\include\stdint.h
 .\objects\crypto.o: C:\Keil_v5\ARM\ARMCC\Bin\..\include\string.h
 .\objects\crypto.o: ..\Libraries\mbedtls\include\mbedtls/aes.h
+.\objects\crypto.o: ..\Libraries\mbedtls\include\mbedtls/config.h
+.\objects\crypto.o: ..\Libraries\mbedtls\include\mbedtls/check_config.h
+.\objects\crypto.o: C:\Keil_v5\ARM\ARMCC\Bin\..\include\limits.h
+.\objects\crypto.o: ..\Libraries\mbedtls\include\mbedtls/platform_util.h
+.\objects\crypto.o: C:\Keil_v5\ARM\ARMCC\Bin\..\include\stddef.h
+.\objects\crypto.o: ..\Libraries\mbedtls\include\mbedtls/platform_time.h
+.\objects\crypto.o: C:\Keil_v5\ARM\ARMCC\Bin\..\include\time.h
+.\objects\crypto.o: ..\Libraries\mbedtls\include\mbedtls/md.h

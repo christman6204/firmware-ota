@@ -1,2 +1,16 @@
 .\objects\sha256.o: ..\Libraries\mbedtls\library\sha256.c
 .\objects\sha256.o: ..\Libraries\mbedtls\library\common.h
+.\objects\sha256.o: ..\Libraries\mbedtls\include\mbedtls/config_min.h
+.\objects\sha256.o: ..\Libraries\mbedtls\include\mbedtls/check_config.h
+.\objects\sha256.o: C:\Keil_v5\ARM\ARMCC\Bin\..\include\limits.h
+.\objects\sha256.o: C:\Keil_v5\ARM\ARMCC\Bin\..\include\assert.h
+.\objects\sha256.o: C:\Keil_v5\ARM\ARMCC\Bin\..\include\stddef.h
+.\objects\sha256.o: C:\Keil_v5\ARM\ARMCC\Bin\..\include\stdint.h
+.\objects\sha256.o: ..\Libraries\mbedtls\include\mbedtls/sha256.h
+.\objects\sha256.o: ..\Libraries\mbedtls\include\mbedtls/config.h
+.\objects\sha256.o: ..\Libraries\mbedtls\include\mbedtls/platform_util.h
+.\objects\sha256.o: ..\Libraries\mbedtls\include\mbedtls/error.h
+.\objects\sha256.o: C:\Keil_v5\ARM\ARMCC\Bin\..\include\string.h
+.\objects\sha256.o: ..\Libraries\mbedtls\include\mbedtls/platform.h
+.\objects\sha256.o: C:\Keil_v5\ARM\ARMCC\Bin\..\include\stdio.h
+.\objects\sha256.o: C:\Keil_v5\ARM\ARMCC\Bin\..\include\stdlib.h

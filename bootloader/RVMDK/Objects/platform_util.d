@@ -1,2 +1,15 @@
 .\objects\platform_util.o: ..\Libraries\mbedtls\library\platform_util.c
 .\objects\platform_util.o: ..\Libraries\mbedtls\library\common.h
+.\objects\platform_util.o: ..\Libraries\mbedtls\include\mbedtls/config_min.h
+.\objects\platform_util.o: ..\Libraries\mbedtls\include\mbedtls/check_config.h
+.\objects\platform_util.o: C:\Keil_v5\ARM\ARMCC\Bin\..\include\limits.h
+.\objects\platform_util.o: C:\Keil_v5\ARM\ARMCC\Bin\..\include\assert.h
+.\objects\platform_util.o: C:\Keil_v5\ARM\ARMCC\Bin\..\include\stddef.h
+.\objects\platform_util.o: C:\Keil_v5\ARM\ARMCC\Bin\..\include\stdint.h
+.\objects\platform_util.o: ..\Libraries\mbedtls\include\mbedtls/platform_util.h
+.\objects\platform_util.o: ..\Libraries\mbedtls\include\mbedtls/config.h
+.\objects\platform_util.o: ..\Libraries\mbedtls\include\mbedtls/platform.h
+.\objects\platform_util.o: C:\Keil_v5\ARM\ARMCC\Bin\..\include\stdio.h
+.\objects\platform_util.o: C:\Keil_v5\ARM\ARMCC\Bin\..\include\stdlib.h
+.\objects\platform_util.o: ..\Libraries\mbedtls\include\mbedtls/threading.h
+.\objects\platform_util.o: C:\Keil_v5\ARM\ARMCC\Bin\..\include\string.h

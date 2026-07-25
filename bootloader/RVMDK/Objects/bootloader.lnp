@@ -28,6 +28,17 @@
 ".\objects\main.o"
 ".\objects\bsp.o"
 ".\objects\stm32f10x_it.o"
+".\objects\flash_int.o"
+".\objects\flash_ext.o"
+".\objects\param.o"
+".\objects\crypto.o"
+".\objects\jump_app.o"
+".\objects\boot_main.o"
+".\objects\aes.o"
+".\objects\sha256.o"
+".\objects\md.o"
+".\objects\platform.o"
+".\objects\platform_util.o"
 --library_type=microlib --strict --scatter "..\bootloader.sct"
 --summary_stderr --info summarysizes --map --load_addr_map_info --xref --callgraph --symbols
 --info sizes --info totals --info unused --info veneers

@@ -27,37 +27,46 @@ Project File Date:  07/25/2026
 <h2>Output:</h2>
 *** Using Compiler 'V5.06 update 6 (build 750)', folder: 'C:\Keil_v5\ARM\ARMCC\Bin'
 Build target 'Bootloader'
-compiling ota_param.h...
-Error: C4065E: type of input file '..\src\ota_param.h' unknown
-compiling sha256.c...
-..\Libraries\mbedtls\library\common.h(15): error:  #13: expected a file name
-  #include MBEDTLS_CONFIG_FILE
-..\Libraries\mbedtls\library\sha256.c: 0 warnings, 1 error
-compiling platform.c...
-..\Libraries\mbedtls\library\common.h(15): error:  #13: expected a file name
-  #include MBEDTLS_CONFIG_FILE
-..\Libraries\mbedtls\library\platform.c: 0 warnings, 1 error
-compiling crypto.c...
-..\Libraries\mbedtls\include\mbedtls/aes.h(34): error:  #13: expected a file name
-  #include MBEDTLS_CONFIG_FILE
-..\src\crypto.c: 0 warnings, 1 error
-compiling aes.c...
-..\Libraries\mbedtls\library\common.h(15): error:  #13: expected a file name
-  #include MBEDTLS_CONFIG_FILE
-..\Libraries\mbedtls\library\aes.c: 0 warnings, 1 error
-compiling platform_util.c...
-..\Libraries\mbedtls\library\common.h(15): error:  #13: expected a file name
-  #include MBEDTLS_CONFIG_FILE
-..\Libraries\mbedtls\library\platform_util.c: 0 warnings, 1 error
-compiling md.c...
-..\Libraries\mbedtls\library\common.h(15): error:  #13: expected a file name
-  #include MBEDTLS_CONFIG_FILE
-..\Libraries\mbedtls\library\md.c: 0 warnings, 1 error
-compiling system_stm32f10x.c...
-..\Libraries\CMSIS\system_stm32f10x.c(277): error:  #20: identifier "VECT_TAB_OFFSET" is undefined
-    SCB->VTOR = FLASH_BASE | VECT_TAB_OFFSET; /* Vector Table Relocation in Internal FLASH. */
-..\Libraries\CMSIS\system_stm32f10x.c: 0 warnings, 1 error
-".\Objects\bootloader.axf" - 8 Error(s), 0 Warning(s).
+After Build - User command #1: keil-build-viewer.exe
+=================================================== keil-build-viewer v1.6 ==================================================
+ 
+[Bootloader.uvprojx]  [Bootloader]  [STM32F103VE]  [LTO disable]
+ 
+-------------------------------------------------------------------------------------------------------------
+                        FILE(s)                       |         RAM (byte)       |       FLASH (byte)       |
+-------------------------------------------------------------------------------------------------------------
+..\Libraries\mbedtls\library\aes.c():                 |        8748              |        3730              |
+..\src\boot_main.c():                                 |           0              |         744              |
+..\src\bsp.c():                                       |           0              |          60              |
+..\Libraries\CMSIS\core_cm3.c():                      |           0              |          32              |
+..\src\crypto.c():                                    |         308              |         240              |
+..\src\flash_ext.c():                                 |           0              |         450              |
+..\src\flash_int.c():                                 |           0              |          90              |
+..\src\jump_app.c():                                  |           0              |          80              |
+..\src\main.c():                                      |           0              |         104              |
+..\Libraries\mbedtls\library\md.c():                  |           0              |         821              |
+..\src\param.c():                                     |           0              |        1224              |
+..\Libraries\mbedtls\library\platform_util.c():       |           4              |          36              |
+..\Libraries\mbedtls\library\sha256.c():              |           0              |        4762              |
+..\Libraries\CMSIS\startup\startup_stm32f10x_hd.s():  |        1536              |         340              |
+..\Libraries\FWlib\src\stm32f10x_flash.c():           |           0              |         286              |
+..\Libraries\FWlib\src\stm32f10x_gpio.c():            |           0              |         286              |
+..\src\stm32f10x_it.c():                              |           0              |          24              |
+..\Libraries\FWlib\src\stm32f10x_rcc.c():             |           0              |          32              |
+..\Libraries\FWlib\src\stm32f10x_spi.c():             |           0              |         136              |
+..\Libraries\CMSIS\system_stm32f10x.c():              |           0              |         328              |
+-------------------------------------------------------------------------------------------------------------
+LR_IROM1
+        RAM 1             [0x20000000 | 0x00010000 (65536)]
+                RW_IRAM1  [0x20000000]|¡ö¡õ¡õ¡õ¡õ¡õ¡õ¡õ__________________________________________| (  10.3 KB /  64.0 KB )  16.2%  
+ 
+        FLASH 1           [0x08000000 | 0x00080000 (524288)]
+                ER_IROM1  [0x08000000]|¡ö¡ö¡ö¡ö¡ö¡ö¡ö¡ö¡ö¡ö¡ö¡ö¡ö¡ö____________________________________| (  13.9 KB /  48.0 KB )  29.0%  
+ 
+Maximum Stack Usage =       4500 bytes + Unknown(Cycles, Untraceable Function Pointers)
+ 
+=============================================================================================================================
+".\Objects\bootloader.axf" - 0 Error(s), 0 Warning(s).
 
 <h2>Software Packages used:</h2>
 
@@ -70,8 +79,7 @@ Package Vendor: Keil
   C:\Users\XJJ\AppData\Local\Arm\Packs\Keil\STM32F1xx_DFP\2.4.1\Device\Include
 
 <h2>Collection of Component Files used:</h2>
-Target not created.
-Build Time Elapsed:  00:00:00
+Build Time Elapsed:  00:00:01
 </pre>
 </body>
 </html>

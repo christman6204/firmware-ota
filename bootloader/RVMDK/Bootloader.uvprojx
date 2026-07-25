@@ -568,7 +568,6 @@
               <FileType>1</FileType>
               <FilePath>..\src\stm32f10x_it.c</FilePath>
             </File>
-            
             <File>
               <FileName>flash_int.c</FileName>
               <FileType>1</FileType>
