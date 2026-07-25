@@ -74,8 +74,9 @@
 /* ---- UID 防克隆 (设计文档 §7.5) ---- */
 #define UID_ADDR        0x1FFFF7E8u    /* STM32F1 96-bit 唯一 ID 寄存器     */
 #define UID_LEN         12u            /* UID 长度 (字节)                   */
-#define UID_FLAG_ADDR   0x0800C000u    /* 加密标记位置 (0x0800C000)              */
-#define UID_FLAG_VALUE  0x00001234u    /* 初始标记值: 0x1234               */
+#define UID_FLAG_ADDR   0x0800C080u    /* 加密标记位置 (页内偏移 128B，前后随机填充防扫描) */
+#define UID_FLAG_PAGE   0x0800C000u    /* 标记所在 2KB 页的起始地址（擦除用）              */
+#define UID_FLAG_VALUE  0x00001234u    /* 初始标记值: 0x1234                               */
 #define UID_ID_ADDR     0x0800C800u    /* 加密 ID 存储位置 (510KB)          */
 #define UID_ID_LEN      16u            /* 加密 ID 长度 (HMAC-SHA256 前 16B) */
 
@@ -134,8 +135,8 @@ static void uid_bind_first_run(void)
         flash_int_program_halfword(UID_ID_ADDR + i, hw);
     }
 
-    /* ---- 擦除标记页 (整页变 0xFF) ---- */
-    flash_int_erase_page(UID_FLAG_ADDR);
+    /* ---- 擦除标记页 (整页变 0xFF, 使用页起始地址) ---- */
+    flash_int_erase_page(UID_FLAG_PAGE);
 }
 
 /* ========================================================================
