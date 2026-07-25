@@ -12,6 +12,7 @@
 #include "stm32f10x_gpio.h"
 #include "stm32f10x_rcc.h"
 #include "stm32f10x_flash.h"
+#include "stm32f10x_spi.h"
 #include "misc.h"
 
 #ifdef  USE_FULL_ASSERT

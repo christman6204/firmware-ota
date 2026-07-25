@@ -339,7 +339,7 @@
               <MiscControls>--no-multibyte-chars</MiscControls>
               <Define>STM32F10X_HD, USE_STDPERIPH_DRIVER,DEBUG_APP</Define>
               <Undefine></Undefine>
-              <IncludePath>..\Libraries\CMSIS;..\Libraries\FWlib\inc;..\..\bootloader\src</IncludePath>
+              <IncludePath>..\Libraries\CMSIS;..\Libraries\FWlib\inc;..\Libraries\mbedtls\include;..\src</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -568,7 +568,42 @@
               <FileType>1</FileType>
               <FilePath>..\src\stm32f10x_it.c</FilePath>
             </File>
-          </Files>
+                    <File>
+            <FileName>ota_param.h</FileName>
+            <FileType>1</FileType>
+            <FilePath>..\src\ota_param.h</FilePath>
+          </File>
+          <File>
+            <FileName>flash_int.c</FileName>
+            <FileType>1</FileType>
+            <FilePath>..\src\flash_int.c</FilePath>
+          </File>
+          <File>
+            <FileName>flash_ext.c</FileName>
+            <FileType>1</FileType>
+            <FilePath>..\src\flash_ext.c</FilePath>
+          </File>
+          <File>
+            <FileName>param.c</FileName>
+            <FileType>1</FileType>
+            <FilePath>..\src\param.c</FilePath>
+          </File>
+          <File>
+            <FileName>crypto.c</FileName>
+            <FileType>1</FileType>
+            <FilePath>..\src\crypto.c</FilePath>
+          </File>
+          <File>
+            <FileName>jump_app.c</FileName>
+            <FileType>1</FileType>
+            <FilePath>..\src\jump_app.c</FilePath>
+          </File>
+          <File>
+            <FileName>boot_main.c</FileName>
+            <FileType>1</FileType>
+            <FilePath>..\src\boot_main.c</FilePath>
+          </File>
+        </Files>
         </Group>
       </Groups>
     </Target>

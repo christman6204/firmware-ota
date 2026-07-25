@@ -5,20 +5,14 @@
 *                                       STM32F103VE (bare-metal)
 *
 * Filename      : main.c
-* Description   : 裸机 bootloader —— PE0 闪灯测试验证硬件正常后，跳转 App 固件。
-*                 不跑操作系统。位于 0x08000000，限制 48KB（含 flash 页对齐）。
-*
-* 启动流程：
-*   1. SystemInit() 配置 72MHz 时钟（startup 自动调用）
-*   2. BSP_Init() 初始化 PE0 LED
-*   3. PE0 闪灯 5 次（1Hz）验证硬件
-*   4. 检查 App 固件头有效性（0x0800C000 处栈地址/复位向量合法）
-*   5. 有效 -> 跳转 App；无效 -> 死循环等看门狗复位或调试
+* Description   : PE0 闪灯诊断 → boot_main() 状态机（验签/备份/解密/升级/跳转App）
+*                 不跑操作系统。位于 0x08000000，限制 48KB。
 *********************************************************************************************************
 */
 
 #include "stm32f10x.h"
 #include "bsp.h"
+#include "boot_main.h"
 
 
 /*
@@ -27,8 +21,8 @@
 *********************************************************************************************************
 */
 
-#define  BLINK_COUNT     5u               /* 闪灯次数                                    */
-#define  BLINK_DLY_MS    500u             /* 亮/灭各 500ms                               */
+#define  BLINK_COUNT     5u
+#define  BLINK_DLY_MS    500u
 
 
 /*
@@ -39,7 +33,6 @@
 
 static void  DelayMs (volatile uint32_t ms)
 {
-    /* 粗略延时：72MHz 下约 ms * 7200 个空循环（调试用，不精确） */
     volatile uint32_t  i;
     while (ms--) {
         for (i = 0; i < 7200; i++) {
@@ -59,9 +52,10 @@ int  main (void)
 {
     uint32_t  i;
 
-    BSP_Init();                                /* 初始化 PE0 LED                             */
+    BSP_Init();
+    flash_ext_init();                              /* 初始化片外 SPI flash（W25Q64）            */
 
-    /* ---- PE0 闪灯测试 ---- */
+    /* ---- PE0 闪灯诊断（5 次 1Hz）---- */
     for (i = 0; i < BLINK_COUNT; i++) {
         LED_ON();
         DelayMs(BLINK_DLY_MS);
@@ -69,9 +63,8 @@ int  main (void)
         DelayMs(BLINK_DLY_MS);
     }
 
-    /* ---- 跳转 App ---- */
-    JumpToApp();                               /* 不返回                                     */
+    /* ---- Bootloader 状态机（验签/备份/解密/跳转）---- */
+    boot_main();                                   /* 不返回                                    */
 
-    /* ---- 不应到达此处 ---- */
     while (1);
 }
