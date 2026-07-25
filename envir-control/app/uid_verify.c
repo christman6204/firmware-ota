@@ -7,7 +7,7 @@
  * 调用时机: App 启动的最早阶段 (在 main 函数或第一个任务中，
  *           在任何业务逻辑之前)。失败则 NVIC_SystemReset()。
  *
- * 注意: BOOT_MASTER_HMAC_KEY 必须与 bootloader/src/crypto.c 中完全一致。
+ * 注意: 密钥直接读取 bootloader 区固定地址 0x0800BF20 (__at 定位)，无需 App 侧重复定义。
  *       开发阶段为全零密钥；量产前统一替换。
  */
 
@@ -22,8 +22,8 @@
 #define UID_ID_ADDR      0x0800C880u   /* 页内偏移 128B，0~127+144~255 随机填充 */
 #define UID_ID_LEN       16u
 
-/* ---- 主密钥 (必须与 bootloader/src/crypto.c 完全一致) ---- */
-static const uint8_t MASTER_HMAC_KEY[32] = {0};  /* 全零占位，量产替换 */
+/* ---- 主密钥固定地址 (与 bootloader/src/crypto.c __at(0x0800BF20) 一致) ---- */
+#define HMAC_KEY_ADDR    ((const uint8_t *)0x0800BF20u)
 
 void uid_verify(void)
 {
@@ -37,7 +37,7 @@ void uid_verify(void)
     memcpy(uid, (const void *)UID_ADDR, UID_LEN);
     mbedtls_md_init(&ctx);
     mbedtls_md_setup(&ctx, mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), 1);
-    mbedtls_md_hmac_starts(&ctx, MASTER_HMAC_KEY, 32);
+    mbedtls_md_hmac_starts(&ctx, HMAC_KEY_ADDR, 32);  /* 读 bootloader 区固定地址 */
     mbedtls_md_hmac_update(&ctx, uid, UID_LEN);
     mbedtls_md_hmac_finish(&ctx, calc);
     mbedtls_md_free(&ctx);
