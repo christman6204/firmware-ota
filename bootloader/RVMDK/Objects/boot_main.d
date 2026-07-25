@@ -1,0 +1,10 @@
+.\objects\boot_main.o: ..\src\boot_main.c
+.\objects\boot_main.o: ..\src\boot_main.h
+.\objects\boot_main.o: ..\src\ota_param.h
+.\objects\boot_main.o: C:\Keil_v5\ARM\ARMCC\Bin\..\include\stdint.h
+.\objects\boot_main.o: ..\src\param.h
+.\objects\boot_main.o: ..\src\flash_ext.h
+.\objects\boot_main.o: ..\src\flash_int.h
+.\objects\boot_main.o: ..\src\crypto.h
+.\objects\boot_main.o: ..\src\jump_app.h
+.\objects\boot_main.o: C:\Keil_v5\ARM\ARMCC\Bin\..\include\string.h

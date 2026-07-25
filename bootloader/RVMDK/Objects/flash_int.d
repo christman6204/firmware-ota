@@ -1,0 +1,14 @@
+.\objects\flash_int.o: ..\src\flash_int.c
+.\objects\flash_int.o: ..\src\flash_int.h
+.\objects\flash_int.o: C:\Keil_v5\ARM\ARMCC\Bin\..\include\stdint.h
+.\objects\flash_int.o: ..\Libraries\FWlib\inc\stm32f10x_flash.h
+.\objects\flash_int.o: ..\Libraries\CMSIS\stm32f10x.h
+.\objects\flash_int.o: ..\Libraries\CMSIS\core_cm3.h
+.\objects\flash_int.o: ..\Libraries\CMSIS\system_stm32f10x.h
+.\objects\flash_int.o: ..\src\stm32f10x_conf.h
+.\objects\flash_int.o: ..\Libraries\FWlib\inc\stm32f10x_gpio.h
+.\objects\flash_int.o: ..\Libraries\CMSIS\stm32f10x.h
+.\objects\flash_int.o: ..\Libraries\FWlib\inc\stm32f10x_rcc.h
+.\objects\flash_int.o: ..\Libraries\FWlib\inc\stm32f10x_flash.h
+.\objects\flash_int.o: ..\Libraries\FWlib\inc\stm32f10x_spi.h
+.\objects\flash_int.o: ..\Libraries\FWlib\inc\misc.h
