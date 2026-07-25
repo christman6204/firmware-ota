@@ -80,9 +80,52 @@
 #define UID_ID_PAGE     0x0800C800u    /* 加密 ID 所在 2KB 页起始地址 (擦除用)                    */
 #define UID_ID_LEN      16u            /* 加密 ID 长度 (HMAC-SHA256 前 16B)              */
 
+/* ---- 密钥区随机填充 (设计文档 §7.1) ---- */
+#define KEY_AREA_START  0x0800BF00u    /* 密钥区起始 (256B)                             */
+#define KEY_AREA_PAD1   136u           /* 前填充字节数                                  */
+#define KEY_AREA_AES    0x0800BF88u    /* AES_KEY 位置 (与 crypto.c __at 保持一致)        */
+#define KEY_AREA_HMAC   0x0800BFA8u    /* HMAC_KEY 位置 (与 crypto.c __at 保持一致)       */
+#define KEY_AREA_PAD2   56u            /* 后填充字节数                                  */
+#define KEY_AREA_SIZE   256u           /* 密钥区总大小                                  */
+
 /* ---- 内部函数声明 ---- */
 static void boot_upgrade(void);
+/*
+ * key_area_fill_padding() -- 首次上电时填充密钥区随机字节
+ *
+ * STM32F1 无硬件 TRNG，用 UID XOR 计数器生成伪随机填充。
+ * 只在 key area 第一个字节为 0xFF (未写入) 时执行一次。
+ *
+ * 布局：
+ *   [0..135]    136B 前填充
+ *   [136..167]   32B AES_KEY  (由 crypto.c __at 放置，此处不写)
+ *   [168..199]   32B HMAC_KEY (由 crypto.c __at 放置，此处不写)
+ *   [200..255]   56B 后填充
+ */
+static void key_area_fill_padding(void)
+{
+    /* 已填充过则跳过 */
+    if (*(volatile uint8_t *)KEY_AREA_START != 0xFF) return;
+
+    uint8_t uid[UID_LEN];
+    memcpy(uid, (const void *)UID_ADDR, UID_LEN);
+
+    /* ---- 前 136B 填充 ---- */
+    for (uint32_t i = 0; i < KEY_AREA_PAD1; i++) {
+        uint8_t val = uid[i % UID_LEN] ^ (uint8_t)(i & 0xFF) ^ 0xA5;
+        flash_int_program_halfword(KEY_AREA_START + i, (uint16_t)val | ((uint16_t)val << 8));
+    }
+
+    /* ---- 后 56B 填充 (跳过 AES+HMAC key 位置) ---- */
+    for (uint32_t i = 0; i < KEY_AREA_PAD2; i++) {
+        uint32_t addr = KEY_AREA_START + 200 + i;
+        uint8_t val = uid[(i + 3) % UID_LEN] ^ (uint8_t)((i + 200) & 0xFF) ^ 0x5A;
+        flash_int_program_halfword(addr, (uint16_t)val | ((uint16_t)val << 8));
+    }
+}
+
 static void uid_bind_first_run(void);
+static void key_area_fill_padding(void);
 
 /* ========================================================================
  * boot_main()  — Bootloader 主入口
@@ -151,6 +194,7 @@ void boot_main(void)
     ota_param_t p;
 
     /* ---- UID 绑定：首次上电生成加密 ID (防克隆) ---- */
+    key_area_fill_padding();  /* 密钥区随机填充 (不碰 key 位置) */
     uid_bind_first_run();
 
     /* ---- 首次上电或参数区损坏：初始化参数区 ---- */
