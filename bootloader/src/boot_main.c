@@ -76,7 +76,7 @@
 #define UID_LEN         12u            /* UID 长度 (字节)                   */
 #define UID_FLAG_ADDR   0x0800C000u    /* 加密标记位置 (页起始)                            */
 #define UID_FLAG_VALUE  0x00001234u    /* 初始标记值: 0x1234                               */
-#define UID_ID_ADDR     0x0800C880u    /* 加密 ID 存储位置 (页内偏移 128B，前后随机填充) */
+#define UID_ID_ADDR     0x0800C900u    /* 加密 ID 存储位置 (页内偏移 256B，前后随机填充) */
 #define UID_ID_PAGE     0x0800C800u    /* 加密 ID 所在 2KB 页起始地址 (擦除用)            */
 #define UID_ID_LEN      16u            /* 加密 ID 长度 (HMAC-SHA256 前 16B)              */
 

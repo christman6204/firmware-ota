@@ -19,7 +19,7 @@
 /* ---- 常量 (与 bootloader/src/boot_main.c 完全一致) ---- */
 #define UID_ADDR         0x1FFFF7E8u
 #define UID_LEN          12u
-#define UID_ID_ADDR      0x0800C880u   /* 页内偏移 128B，与 bootloader 一致 */
+#define UID_ID_ADDR      0x0800C900u   /* 页内偏移 256B，与 bootloader 一致 */
 #define UID_ID_LEN       16u
 
 /* ---- 主密钥 (必须与 bootloader/src/crypto.c 完全一致) ---- */
