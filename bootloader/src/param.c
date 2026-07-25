@@ -1,8 +1,41 @@
+/**
+ * @file    param.c
+ * @brief   OTA 参数管理实现
+ *
+ * @details 实现 OTA 参数的片内 Flash 读写与 CRC32 校验。
+ *
+ *          CRC32 算法参数:
+ *          - 多项式 (polynomial):    0x4C11DB7
+ *          - 输入反射 (refin):        true  (逐 bit 反转)
+ *          - 输出反射 (refout):       true  (逐 bit 反转)
+ *          - 初始值 (init):           0xFFFFFFFF
+ *          - 最终异或 (xorout):       0xFFFFFFFF
+ *
+ *          校验顺序: magic -> CRC32
+ *
+ *          CRC32 计算范围: 仅结构体前 60 字节 (不含 crc32 字段自身)，
+ *          避免 crc32 字段值变化导致校验值循环依赖。
+ *
+ *          param_write 写入流程:
+ *          1. 复制参数 -> 计算 CRC32 -> 填充 crc32 字段
+ *          2. 擦除参数页 (片内 Flash, 2 KB 页)
+ *          3. 逐半字编程写入 (STM32F1 仅支持 16-bit 写入)
+ *          4. 回读 memcmp 验证
+ */
+
 #include "param.h"
 #include "flash_int.h"
 #include <string.h>
 
-/* CRC32 查表（多项式 0x4C11DB7, reflected, 初值 0xFFFFFFFF, 输出异或 0xFFFFFFFF） */
+/* ================================================================
+ *  CRC32 查表 (256 个 32-bit 常量)
+ *
+ *  算法参数:
+ *  - 多项式: 0x4C11DB7 (Ethernet / PKZIP 标准多项式)
+ *  - 输入/输出反射: true
+ *  - 初值: 0xFFFFFFFF
+ *  - 异或输出: 0xFFFFFFFF
+ *  ================================================================ */
 static const uint32_t crc32_table[256] = {
     0x00000000,0x04C11DB7,0x09823B6E,0x0D4326D9,0x130476DC,0x17C56B6B,0x1A864DB2,0x1E475005,
     0x2608EDB8,0x22C9F00F,0x2F8AD6D6,0x2B4BCB61,0x350C9B64,0x31CD86D3,0x3C8EA00A,0x384FBDBD,
@@ -38,6 +71,18 @@ static const uint32_t crc32_table[256] = {
     0xAFB010B1,0xAB710D06,0xA6322BDF,0xA2F33668,0xBCB4666D,0xB8757BDA,0xB5365D03,0xB1F740B4,
 };
 
+/**
+ * @brief   计算 ota_param_t 的 CRC32 校验值
+ *
+ *          使用查表法实现反射 CRC32 (Ethernet 标准)。
+ *
+ *          @attention  仅计算结构体的前 60 字节，不包含 crc32 字段自身。
+ *                      这是因为 crc32 字段的值在写入前才由本函数计算填充，
+ *                      如果包含自身则会造成循环依赖。
+ *
+ *          @param  p  指向 ota_param_t 结构体
+ *          @return   CRC32 校验值 (最终异或了 0xFFFFFFFF)
+ */
 uint32_t param_calc_crc32(const ota_param_t *p) {
     uint32_t crc = 0xFFFFFFFF;
     const uint8_t *data = (const uint8_t*)p;
@@ -47,6 +92,23 @@ uint32_t param_calc_crc32(const ota_param_t *p) {
     return crc ^ 0xFFFFFFFF;
 }
 
+/**
+ * @brief   从片内 Flash 读取 OTA 参数并校验
+ *
+ *          校验顺序:
+ *          1. Magic 校验:
+ *             从 OTA_PARAM_ADDR 处读取整个结构体，
+ *             检查 magic 是否为 0x5041524D ("PARM")。
+ *             失败返回 -1 (参数区未初始化或已损坏)。
+ *          2. CRC32 校验:
+ *             对结构体前 60 字节计算 CRC32，
+ *             与 crc32 字段比较。失败返回 -2 (数据损坏)。
+ *
+ *          @param  p  输出参数，指向调用方提供的缓冲区
+ *          @retval  0  Magic 与 CRC32 均通过，数据有效
+ *          @retval -1  Magic 校验失败
+ *          @retval -2  CRC32 校验失败
+ */
 int param_read(ota_param_t *p) {
     memcpy(p, (const void *)OTA_PARAM_ADDR, sizeof(*p));
     if (p->magic != 0x5041524D) return -1;
@@ -55,6 +117,32 @@ int param_read(ota_param_t *p) {
     return 0;
 }
 
+/**
+ * @brief   将 OTA 参数写入片内 Flash
+ *
+ *          写入流程 (4 步):
+ *
+ *          Step 1 - 准备数据:
+ *            复制 p 到局部变量 tmp，调用 param_calc_crc32 计算
+ *            并填充 tmp.crc32 字段 (原始 p 中的 crc32 值被覆盖)。
+ *
+ *          Step 2 - 擦除:
+ *            调用 flash_int_erase_page 擦除 OTA_PARAM_ADDR 所在的
+ *            片内 Flash 页 (2 KB)。擦除后该页所有字节为 0xFF。
+ *
+ *          Step 3 - 编程:
+ *            将 tmp 按 16-bit 半字拆分，通过
+ *            flash_int_program_halfword 逐个写入 Flash。
+ *            STM32F1 片内 Flash 不支持字节级写入，必须半字编程。
+ *
+ *          Step 4 - 验证:
+ *            从 Flash 地址直接 memcpy 读回，与 tmp 做 memcmp 比较。
+ *            不匹配则返回 -1。
+ *
+ *          @param  p  指向要写入的参数结构体 (crc32 字段由内部自动填充)
+ *          @retval  0  写入成功且回读验证通过
+ *          @retval -1  写入后验证失败
+ */
 int param_write(const ota_param_t *p) {
     ota_param_t tmp = *p;
     tmp.crc32 = param_calc_crc32(&tmp);
