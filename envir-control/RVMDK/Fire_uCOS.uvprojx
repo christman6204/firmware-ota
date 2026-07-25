@@ -621,7 +621,7 @@
                     <File>
             <FileName>uid_verify.c</FileName>
             <FileType>1</FileType>
-            <FilePath>..pp\uid_verify.c</FilePath>
+            <FilePath>..\app\uid_verify.c</FilePath>
           </File>
         </Files>
         </Group>
@@ -861,7 +861,7 @@
             <Group>
         <GroupName>mbedtls</GroupName>
         <Files>
-          <File><FileName>aes.c</FileName><FileType>1</FileType><FilePath>..\Libraries\mbedtls\libraryes.c</FilePath></File>
+          <File><FileName>aes.c</FileName><FileType>1</FileType><FilePath>..\Libraries\mbedtls\library\aes.c</FilePath></File>
           <File><FileName>sha256.c</FileName><FileType>1</FileType><FilePath>..\Libraries\mbedtls\library\sha256.c</FilePath></File>
           <File><FileName>md.c</FileName><FileType>1</FileType><FilePath>..\Libraries\mbedtls\library\md.c</FilePath></File>
           <File><FileName>platform.c</FileName><FileType>1</FileType><FilePath>..\Libraries\mbedtls\library\platform.c</FilePath></File>
