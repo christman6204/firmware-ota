@@ -611,7 +611,7 @@
           <File>
             <FileName>aes.c</FileName>
             <FileType>1</FileType>
-            <FilePath>..\Libraries\mbedtls\libraryes.c</FilePath>
+            <FilePath>..\Libraries\mbedtls\library\aes.c</FilePath>
           </File>
           <File>
             <FileName>sha256.c</FileName>
