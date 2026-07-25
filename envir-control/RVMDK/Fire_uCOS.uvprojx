@@ -339,7 +339,7 @@
               <MiscControls>--no-multibyte-chars</MiscControls>
               <Define>STM32F10X_HD, USE_STDPERIPH_DRIVER,DEBUG_APP</Define>
               <Undefine></Undefine>
-              <IncludePath>..\Libraries\CMSIS;..\Libraries\FWlib\inc;..\app;..\app;..\bsp;..\uc-cpu;..\uc-cpu\ARM-Cortex-M3\RealView;..\uc-lib;..\ucos-iii\Source;..\ucos-iii\Ports\ARM-Cortex-M3\Generic\RealView;</IncludePath>
+              <IncludePath>..\Libraries\CMSIS;..\Libraries\FWlib\inc;..;..\app;..\app;..\bsp;..\uc-cpu;..\uc-cpu\ARM-Cortex-M3\RealView;..\uc-lib;..\ucos-iii\Source;..\ucos-iii\Ports\ARM-Cortex-M3\Generic\RealView;</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -1188,7 +1188,7 @@
               <MiscControls></MiscControls>
               <Define>STM32F10X_HD, USE_STDPERIPH_DRIVER,BT_APP</Define>
               <Undefine></Undefine>
-              <IncludePath>..\Libraries\CMSIS;..\Libraries\FWlib\inc;..\app;..\app;..\bsp;..\uc-cpu;..\uc-cpu\ARM-Cortex-M3\RealView;..\uc-lib;..\ucos-iii\Source;..\ucos-iii\Ports\ARM-Cortex-M3\Generic\RealView;</IncludePath>
+              <IncludePath>..\Libraries\CMSIS;..\Libraries\FWlib\inc;..;..\app;..\app;..\bsp;..\uc-cpu;..\uc-cpu\ARM-Cortex-M3\RealView;..\uc-lib;..\ucos-iii\Source;..\ucos-iii\Ports\ARM-Cortex-M3\Generic\RealView;</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -2037,7 +2037,7 @@
               <MiscControls></MiscControls>
               <Define>STM32F10X_HD, USE_STDPERIPH_DRIVER,UPDATA_APP</Define>
               <Undefine></Undefine>
-              <IncludePath>..\Libraries\CMSIS;..\Libraries\FWlib\inc;..\app;..\app;..\bsp;..\uc-cpu;..\uc-cpu\ARM-Cortex-M3\RealView;..\uc-lib;..\ucos-iii\Source;..\ucos-iii\Ports\ARM-Cortex-M3\Generic\RealView;</IncludePath>
+              <IncludePath>..\Libraries\CMSIS;..\Libraries\FWlib\inc;..;..\app;..\app;..\bsp;..\uc-cpu;..\uc-cpu\ARM-Cortex-M3\RealView;..\uc-lib;..\ucos-iii\Source;..\ucos-iii\Ports\ARM-Cortex-M3\Generic\RealView;</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
