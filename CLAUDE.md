@@ -49,17 +49,14 @@ Python 字符串中 `\a`=BEL(0x07)、`\b`=BS(0x08)、`\f`=FF(0x0C)、`\n`=LF(0x0
 
 ### 验证方法
 
-修改后必须验证：
-```python
-import xml.etree.ElementTree as ET
-ET.parse('project.uvprojx')  # 抛异常 = 已损坏
+**修改 .uvprojx 后必须运行验证脚本（最后一步，不可跳过）：**
 
-# 检查残留控制字符
-with open('project.uvprojx', 'rb') as f:
-    d = f.read()
-bad = sum(1 for b in d if b in (0x07, 0x08))
-assert bad == 0, f'{bad} control chars found'
+```bash
+python verify_uvprojx.py
+# 输出: CLEAN + VALID = 通过。任何 CORRUPT/INVALID = 立即修复。
 ```
+
+脚本功能：全量扫描所有 .uvprojx 文件，检查①控制字符(BEL 0x07/BS 0x08)残留 ②XML 合法性。只改一个文件也要跑——历史教训表明残留控制字符可能藏在你没改的行里。
 
 ### 历史踩坑记录
 
