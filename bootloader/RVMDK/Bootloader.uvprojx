@@ -336,8 +336,8 @@
             <v6WtE>0</v6WtE>
             <v6Rtti>0</v6Rtti>
             <VariousControls>
-              <MiscControls>--no-multibyte-chars</MiscControls>
-              <Define>STM32F10X_HD, USE_STDPERIPH_DRIVER,DEBUG_APP</Define>
+              <MiscControls>--no-multibyte-chars --c99</MiscControls>
+              <Define>STM32F10X_HD, USE_STDPERIPH_DRIVER, MBEDTLS_CONFIG_FILE=&quot;mbedtls/config_min.h&quot;</Define>
               <Undefine></Undefine>
               <IncludePath>..\Libraries\CMSIS;..\Libraries\FWlib\inc;..\Libraries\mbedtls\include;..\src</IncludePath>
             </VariousControls>
@@ -605,7 +605,38 @@
           </File>
         </Files>
         </Group>
-      </Groups>
+            <Group>
+        <GroupName>mbedtls</GroupName>
+        <Files>
+          <File>
+            <FileName>aes.c</FileName>
+            <FileType>1</FileType>
+            <FilePath>..\Libraries\mbedtls\libraryes.c</FilePath>
+          </File>
+          <File>
+            <FileName>sha256.c</FileName>
+            <FileType>1</FileType>
+            <FilePath>..\Libraries\mbedtls\library\sha256.c</FilePath>
+          </File>
+          <File>
+            <FileName>md.c</FileName>
+            <FileType>1</FileType>
+            <FilePath>..\Libraries\mbedtls\library\md.c</FilePath>
+          </File>
+          <File>
+            <FileName>platform.c</FileName>
+            <FileType>1</FileType>
+            <FilePath>..\Libraries\mbedtls\library\platform.c</FilePath>
+          </File>
+          <File>
+            <FileName>platform_util.c</FileName>
+            <FileType>1</FileType>
+            <FilePath>..\Libraries\mbedtls\library\platform_util.c</FilePath>
+          </File>
+        </Files>
+      </Group>
+
+    </Groups>
     </Target>
   </Targets>
 
