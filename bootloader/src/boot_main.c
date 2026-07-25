@@ -53,7 +53,7 @@
  *   - 完成(f) 清 magic 后，下次上电走 UPGRADING → 等 App 确认
  *
  * 【存储布局】 详见 docs/ota-design.md §7.1
- *   片内: Bootloader 48KB | App 256KB @0x0800C000 | 参数区 4KB @0x0804C000
+ *   片内: Bootloader 48KB | App 288KB @0x08010000 | 参数区 96KB @0x08058000
  *   片外: 固件头 4KB | 新固件区 512KB | 备份头 4KB | 备份区 512KB
  */
 
@@ -74,7 +74,7 @@
 /* ---- UID 防克隆 (设计文档 §7.5) ---- */
 #define UID_ADDR        0x1FFFF7E8u    /* STM32F1 96-bit 唯一 ID 寄存器     */
 #define UID_LEN         12u            /* UID 长度 (字节)                   */
-#define UID_FLAG_ADDR   0x0800C000u    /* 加密标记位置 (508KB)              */
+#define UID_FLAG_ADDR   0x0800C000u    /* 加密标记位置 (0x0800C000)              */
 #define UID_FLAG_VALUE  0x00001234u    /* 初始标记值: 0x1234               */
 #define UID_ID_ADDR     0x0800C800u    /* 加密 ID 存储位置 (510KB)          */
 #define UID_ID_LEN      16u            /* 加密 ID 长度 (HMAC-SHA256 前 16B) */
@@ -97,7 +97,7 @@ static void uid_bind_first_run(void);
  * 复制后，加密 ID ≠ 新设备 UID 的计算值 → App 启动验证失败 → 反复复位。
  *
  * 流程:
- *   读 flash @0x0807F000 (加密标记)
+ *   读 flash @0x0800C000 (加密标记)
  *   ├─ == 0x00001234 → 未初始化，生成加密 ID → 擦标记
  *   └─ ≠ 0x00001234 → 已处理 (0xFF 或 断电残留)，跳过
  *
@@ -123,10 +123,10 @@ static void uid_bind_first_run(void)
     crypto_hmac_sha256_final(enc_id);
 
     /* ====================================================================
-     * 写入加密 ID 到 flash @0x0807F800
+     * 写入加密 ID 到 flash @0x0800C800
      *
      * 注意: 写之前必须先擦页 (2KB)。如果该页存了其他数据，此处会丢失。
-     * 当前设计 510KB @0x0807F800 独占一页，安全。
+     * 当前设计 0x0800C800 独占一页，安全。
      * ==================================================================== */
     flash_int_erase_page(UID_ID_ADDR);
     for (int i = 0; i < UID_ID_LEN; i += 2) {

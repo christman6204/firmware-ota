@@ -42,7 +42,7 @@ void uid_verify(void)
     mbedtls_md_hmac_finish(&ctx, calc);
     mbedtls_md_free(&ctx);
 
-    /* ---- Step 2: 读 bootloader 写入的加密 ID (0x0807F800, 16B) ---- */
+    /* ---- Step 2: 读 bootloader 写入的加密 ID (0x0800C800, 16B) ---- */
     memcpy(stored, (const void *)UID_ID_ADDR, UID_ID_LEN);
 
     /* ---- Step 3: 比对前 16 字节 ---- */
