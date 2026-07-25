@@ -362,6 +362,8 @@ device/config/resp/{dev_id}     # 配置读取应答（设备→云），data < 
 
 ```
 0x0800_0000  Bootloader   (48KB = 24页)  永不升级，出厂烧录
+
+> Bootloader 区尾部 256B 为密钥区 (0x0800BF00~0x0800BFFF)：前 136B 随机填充 + AES_KEY(32B @0x0800BF88) + HMAC_KEY(32B @0x0800BFA8) + 后 56B 随机填充。Bootloader 编译时 __at() 写入，App 运行时指针读取。
 0x0800_C000  加密ID标记区  (2KB = 1页)   首次上电标记 (0x1234)
 0x0800_C800  加密ID区      (2KB = 1页)   UID绑定生成的设备指纹 (16B)
 0x0800_D000  保留区1      (12KB = 6页)   预留
