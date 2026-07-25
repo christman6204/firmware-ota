@@ -69,10 +69,74 @@
 /* ---- 片内 App 区地址与大小 ---- */
 #define APP_AREA_START   0x0800C000u    /* App 起始地址 (设计文档 §7.1) */
 #define APP_AREA_SIZE_KB 256u           /* App 区大小 256KB */
-#define BLOCK_SIZE       1024u          /* 流式处理块大小 1KB */
+#define BLOCK_SIZE       1024u          /* 流式处理块大小 1KB            */
+
+/* ---- UID 防克隆 (设计文档 §7.5) ---- */
+#define UID_ADDR        0x1FFFF7E8u    /* STM32F1 96-bit 唯一 ID 寄存器     */
+#define UID_LEN         12u            /* UID 长度 (字节)                   */
+#define UID_FLAG_ADDR   0x0807F000u    /* 加密标记位置 (508KB)              */
+#define UID_FLAG_VALUE  0x00001234u    /* 初始标记值: 0x1234               */
+#define UID_ID_ADDR     0x0807F800u    /* 加密 ID 存储位置 (510KB)          */
+#define UID_ID_LEN      16u            /* 加密 ID 长度 (HMAC-SHA256 前 16B) */
 
 /* ---- 内部函数声明 ---- */
 static void boot_upgrade(void);
+static void uid_bind_first_run(void);
+
+/* ========================================================================
+ * boot_main()  — Bootloader 主入口
+ *
+ * 上电后调用的第一个函数 (在 main.c 闪灯诊断之后)。
+ * 读参数区 → 判断 OTA 状态机状态 → 执行升级或直接跳转 App。
+ * 本函数不返回。
+ * ======================================================================== */
+/*
+ * uid_bind_first_run() — 首次上电时生成 UID 绑定的加密 ID
+ *
+ * 设计意图: 防止合法设备的全片 flash 内容被暴力复制到另一台设备上。
+ * 复制后，加密 ID ≠ 新设备 UID 的计算值 → App 启动验证失败 → 反复复位。
+ *
+ * 流程:
+ *   读 flash @0x0807F000 (加密标记)
+ *   ├─ == 0x00001234 → 未初始化，生成加密 ID → 擦标记
+ *   └─ ≠ 0x00001234 → 已处理 (0xFF 或 断电残留)，跳过
+ *
+ * 生成: 加密ID = HMAC-SHA256(BOOT_MASTER_HMAC_KEY, UID[12B]) 取前 16B
+ */
+static void uid_bind_first_run(void)
+{
+    uint32_t flag = *(volatile uint32_t *)UID_FLAG_ADDR;
+
+    if (flag != UID_FLAG_VALUE) {
+        /* 已处理 (0xFFFF 或 断电残留) → 无需操作 */
+        return;
+    }
+
+    /* ---- 读 UID (96-bit, 12 字节) ---- */
+    uint8_t uid[UID_LEN];
+    memcpy(uid, (const void *)UID_ADDR, UID_LEN);
+
+    /* ---- 计算加密 ID = HMAC-SHA256(BOOT_MASTER_HMAC_KEY, UID) 取前 16B ---- */
+    uint8_t enc_id[32];
+    crypto_hmac_sha256_init(BOOT_MASTER_HMAC_KEY);
+    crypto_hmac_sha256_update(uid, UID_LEN);
+    crypto_hmac_sha256_final(enc_id);
+
+    /* ====================================================================
+     * 写入加密 ID 到 flash @0x0807F800
+     *
+     * 注意: 写之前必须先擦页 (2KB)。如果该页存了其他数据，此处会丢失。
+     * 当前设计 510KB @0x0807F800 独占一页，安全。
+     * ==================================================================== */
+    flash_int_erase_page(UID_ID_ADDR);
+    for (int i = 0; i < UID_ID_LEN; i += 2) {
+        uint16_t hw = enc_id[i] | ((uint16_t)enc_id[i + 1] << 8);
+        flash_int_program_halfword(UID_ID_ADDR + i, hw);
+    }
+
+    /* ---- 擦除标记页 (整页变 0xFF) ---- */
+    flash_int_erase_page(UID_FLAG_ADDR);
+}
 
 /* ========================================================================
  * boot_main()  — Bootloader 主入口
@@ -84,6 +148,9 @@ static void boot_upgrade(void);
 void boot_main(void)
 {
     ota_param_t p;
+
+    /* ---- UID 绑定：首次上电生成加密 ID (防克隆) ---- */
+    uid_bind_first_run();
 
     /* ---- 首次上电或参数区损坏：初始化参数区 ---- */
     if (param_read(&p) != 0) {
