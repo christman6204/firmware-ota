@@ -361,44 +361,14 @@ device/config/resp/{dev_id}     # 配置读取应答（设备→云），data < 
 #### 片内 flash
 
 ```
-0x0800_0000  Bootloader  (48KB = 24页)   永不升级，出厂烧录
-0x0801_0000  App         (288KB = 144页)  OTA 目标
-0x0804_C000  参数区      (96KB = 48页)     状态机 + 版本 + 升级标志
-```
+0x0800_0000  Bootloader   (48KB = 24页)  永不升级，出厂烧录
+0x0800_C000  加密ID标记区  (2KB = 1页)   首次上电标记 (0x1234)
+0x0800_C800  加密ID区      (2KB = 1页)   UID绑定生成的设备指纹 (16B)
+0x0800_D000  保留区1      (12KB = 6页)   预留
+0x0801_0000  App          (288KB = 144页) OTA 目标
+0x0805_8000  参数区        (96KB = 48页)  状态机 + 版本 + 升级标志
+0x0807_0000  保留区2       (64KB = 32页)  预留
 
-> **片内 flash 页大小 = 2KB**（STM32F103VE high-density）。擦除最小单位 2KB，编程最小单位 16-bit。参数区结构体仅 64 字节，占第一页头部，第二页预留。
-
-> 合计 48 + 256 + 4 = 448KB，STM32F103VE 片内 flash 共 512KB，剩余 64KB 可用。App 区上限即 288KB。
-
-**参数区结构（4KB @ `0x0804_C000`，掉电保持）**：
-
-```c
-typedef struct {
-  uint32_t magic;           // 0x5041524D ("PARM")，参数区有效标志
-  uint32_t dev_id;          // 设备 ID（uint32，出厂烧录；必须存参数区而非仅 App 内，否则 OTA 替换 App 后丢失身份）
-  uint8_t  state;           // OTA 状态机: IDLE/DOWNLOADING/DOWNLOADED/UPGRADE_REQUESTED/UPGRADING
-  uint8_t  app_healthy;     // 启动确认标志（新 App 启动成功后置 1）
-  uint8_t  upgrade_flag;    // 触发 Bootloader 升级标志
-  uint8_t  upgrade_result;  // Bootloader 写入的升级结果码（App 读取上报后清零）
-                            //   0=无/1=成功/2=验签失败/3=备份失败/4=SPI错误/5=写入失败已回滚/6=启动失败已回滚
-  uint8_t  task_id[16];     // 当前 OTA 任务 ID（CMD 0x03 收到时写入；App 上报 CMD 0x09 后清零）
-  char     cur_version[16]; // 当前运行的 App 版本
-  char     new_version[16]; // 升级目标版本（升级完成后移入 cur_version）
-  uint32_t crc32;           // 本结构体校验（覆盖 magic~new_version）
-} ota_param_t;              // 定长，远小于 4KB，剩余空间预留
-```
-
-> - `receive_offset` **不在**参数区，在片外 flash 新固件头里（§7.1 片外布局）。
-> - 参数区只在**状态迁移时**写入（每次 OTA 寥寥几次），不高频写，flash 寿命无忧。
-> - 写入用"先写后校验"（写完回读比对 `crc32`），防掉电写半。
-> - **`task_id` 生命周期**：CMD 0x03（开始升级）时 App 写入 → Bootloader 不修改 → 升级结束后 App 读取并经 CMD 0x09 上报云端 → 上报成功后清零。
-> - **`upgrade_result` 生命周期**：Bootloader 在中止/完成时写入具体错误码 → App 启动后读取 → 经 CMD 0x09（result 字段）上报云端 → 上报成功后清零。若 `upgrade_result != 0 && state == IDLE`，App 可知"升级曾尝试但失败"及失败原因。
-
-#### 片外 SPI flash（如 W25Q64 8MB）
-
-> **存储约定（方案 A）**：新固件区 / 备份固件区均**原样存完整密文 blob** = `[IV(16B)][密文][HMAC(32B)]`。App 收到第 N 字节就写第 N 偏移，`receive_offset` 即已写 blob 字节数，与 HTTP 下载 offset、固件区写入 offset 三者相等，断点续传零换算。IV/HMAC 由 Bootloader 用固定偏移从固件区读取（IV 在 blob 首 16B，HMAC 在 blob 末 32B），故固件头不再单独存 IV/HMAC。
-
-```
 0x00_0000  新固件头     (4KB)    magic + size + version + receive_offset
 0x00_1000  新固件区     (512KB)  完整密文 blob：[IV 16B][密文][HMAC 32B]
 0x08_1000  备份固件头   (4KB)    backup_magic + size + version
@@ -570,7 +540,7 @@ HMAC 计算范围：`IV || Encrypted_Data`，确保 IV 不可篡改。
 | 48KB+2KB = 0x0800C000):
      a. 读 UID (0x1FFFF7E8, 12B)
      b. 加密ID = HMAC-SHA256(主密钥, UID) 取前 16B
-     c. 写加密ID 到 0x0807F800
+     c. 写加密ID 到 0x0800C800
      d. 擦除  �  所在页 (整页变 0xFF)
      e. 进入正常 Bootloader 流程
   3. else (标记 == 0xFFFFFFFF 或中间态):
@@ -578,7 +548,7 @@ HMAC 计算范围：`IV || Encrypted_Data`，确保 IV 不可篡改。
 
 App 每次启动:
   1. 读 UID → 重复计算加密ID = HMAC-SHA256(主密钥, UID)
-  2. 读 0x0807F800 处存储的加密ID → 比对
+  2. 读 0x0800C800 处存储的加密ID → 比对
   3. 不匹配 → NVIC_SystemReset() 软复位（反复重启，拒绝运行）
   4. 匹配 → 继续正常业务
 ```
