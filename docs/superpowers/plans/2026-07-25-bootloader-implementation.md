@@ -6,7 +6,7 @@
 
 **Architecture:** 裸机 C，分层架构——`flash_drv`（片内+片外 SPI W25Q64）→ `crypto`（mbedtls AES+HMAC）→ `param`（ota_param_t CRUD+CRC32）→ `boot_main`（状态机：验签→备份→擦写→跳转/回滚）+ `jump_app`（VTOR/MSP 验证跳转）。PE0 闪灯保留作为诊断。
 
-**Tech Stack:** STM32F103VE Cortex-M3, Keil ARMCC V5, Libraries (CMSIS+FWlib), mbedtls V2.x
+**Tech Stack:** STM32F103VE Cortex-M3, Keil ARMCC V5, Libraries (CMSIS+FWlib), mbedtls V2.28 LTS
 
 ## Global Constraints
 
