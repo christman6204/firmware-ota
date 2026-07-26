@@ -391,7 +391,7 @@ device/config/resp/{dev_id}     # 配置读取应答（设备→云），data < 
 0x0800_C000  加密ID标记区  (2KB = 1页)   首次上电标记 (0x1234, uid_flag.c 编译期放置)
 0x0800_C800  加密ID区      (2KB = 1页)   UID绑定生成的设备指纹 (16B @页内偏移128B)
 0x0800_D000  保留区1      (12KB = 6页)   预留
-   0x0800_F800  FW_VERSION   (2B)           固件版本常量 (分散加载定位)
+   0x0800_F800  APP_INFO     (128B)         fw_version + master_device_key + 预留
 0x0801_0000  App          (288KB = 144页) OTA 目标
 0x0805_8000  参数区        (96KB = 48页)  状态机 + 版本 + 升级标志
 0x0807_0000  保留区2       (64KB = 32页)  预留
