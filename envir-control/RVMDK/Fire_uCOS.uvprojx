@@ -325,7 +325,7 @@
             <wLevel>2</wLevel>
             <uThumb>0</uThumb>
             <uSurpInc>0</uSurpInc>
-            <uC99>0</uC99>
+            <uC99>1</uC99>
             <uGnu>0</uGnu>
             <useXO>0</useXO>
             <v6Lang>0</v6Lang>
@@ -336,7 +336,7 @@
             <v6WtE>0</v6WtE>
             <v6Rtti>0</v6Rtti>
             <VariousControls>
-              <MiscControls>--no-multibyte-chars --c99</MiscControls>
+              <MiscControls>--no-multibyte-chars</MiscControls>
               <Define>STM32F10X_HD, USE_STDPERIPH_DRIVER,DEBUG_APP</Define>
               <Undefine></Undefine>
               <IncludePath>..\Libraries\CMSIS;..\Libraries\FWlib\inc;..;..\app;..\app;..\bsp;..\uc-cpu;..\uc-cpu\ARM-Cortex-M3\RealView;..\uc-lib;..\ucos-iii\Source;..\ucos-iii\Ports\ARM-Cortex-M3\Generic\RealView;..\Libraries\mbedtls\include</IncludePath>
@@ -354,7 +354,7 @@
             <useXO>0</useXO>
             <ClangAsOpt>4</ClangAsOpt>
             <VariousControls>
-              <MiscControls>--c99</MiscControls>
+              <MiscControls></MiscControls>
               <Define></Define>
               <Undefine></Undefine>
               <IncludePath></IncludePath>
@@ -622,6 +622,16 @@
               <FileName>uid_verify.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\app\uid_verify.c</FilePath>
+            </File>
+            <File>
+              <FileName>app_info.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\app\app_info.c</FilePath>
+            </File>
+            <File>
+              <FileName>device_secret.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\app\device_secret.c</FilePath>
             </File>
           </Files>
         </Group>
@@ -1209,7 +1219,7 @@
             <wLevel>2</wLevel>
             <uThumb>0</uThumb>
             <uSurpInc>0</uSurpInc>
-            <uC99>0</uC99>
+            <uC99>1</uC99>
             <uGnu>0</uGnu>
             <useXO>0</useXO>
             <v6Lang>0</v6Lang>
@@ -1220,7 +1230,7 @@
             <v6WtE>0</v6WtE>
             <v6Rtti>0</v6Rtti>
             <VariousControls>
-              <MiscControls>--c99</MiscControls>
+              <MiscControls></MiscControls>
               <Define>STM32F10X_HD, USE_STDPERIPH_DRIVER,UPDATA_APP</Define>
               <Undefine></Undefine>
               <IncludePath>..\Libraries\CMSIS;..\Libraries\FWlib\inc;..;..\app;..\app;..\bsp;..\uc-cpu;..\uc-cpu\ARM-Cortex-M3\RealView;..\uc-lib;..\ucos-iii\Source;..\ucos-iii\Ports\ARM-Cortex-M3\Generic\RealView;;..\Libraries\mbedtls\include</IncludePath>
@@ -1238,7 +1248,7 @@
             <useXO>0</useXO>
             <ClangAsOpt>4</ClangAsOpt>
             <VariousControls>
-              <MiscControls>--c99</MiscControls>
+              <MiscControls></MiscControls>
               <Define></Define>
               <Undefine></Undefine>
               <IncludePath></IncludePath>
@@ -1506,6 +1516,16 @@
               <FileName>uid_verify.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\app\uid_verify.c</FilePath>
+            </File>
+            <File>
+              <FileName>app_info.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\app\app_info.c</FilePath>
+            </File>
+            <File>
+              <FileName>device_secret.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\app\device_secret.c</FilePath>
             </File>
           </Files>
         </Group>

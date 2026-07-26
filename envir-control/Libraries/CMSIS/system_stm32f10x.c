@@ -127,15 +127,14 @@
 /* #define VECT_TAB_SRAM */
 
 #ifdef BT_APP
-	#define VECT_TAB_OFFSET  0xC800 /*!< Vector Table base offset field. 
+	#define VECT_TAB_OFFSET  0x10000 /*!< Vector Table base offset field.
                                 This value must be a multiple of 0x200. */
 #endif
 #ifdef UPDATA_APP
-	#define VECT_TAB_OFFSET  0xC800 /*!< Vector Table base offset field.                                This value must be a multiple of 0x200. */
+	#define VECT_TAB_OFFSET  0x10000 /*!< Vector Table base offset field. App @0x08010000 */
 #endif
 #ifdef DEBUG_APP
-	#define VECT_TAB_OFFSET  0x0000 /*!< Vector Table base offset field. 
-                               This value must be a multiple of 0x200. */
+	#define VECT_TAB_OFFSET  0x0000 /*!< Vector Table base offset field. App @0x08000000 (debug) */
 #endif
 
 

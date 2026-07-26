@@ -48,8 +48,8 @@
             <NotGenerated>0</NotGenerated>
             <InvalidFlash>1</InvalidFlash>
           </TargetStatus>
-          <OutputDirectory>.\Objects\</OutputDirectory>
-          <OutputName>bootloader</OutputName>
+          <OutputDirectory>D:\output\BT\XH800\</OutputDirectory>
+          <OutputName>BT_XL800</OutputName>
           <CreateExecutable>1</CreateExecutable>
           <CreateLib>0</CreateLib>
           <CreateHexFile>1</CreateHexFile>
@@ -325,7 +325,7 @@
             <wLevel>2</wLevel>
             <uThumb>0</uThumb>
             <uSurpInc>0</uSurpInc>
-            <uC99>0</uC99>
+            <uC99>1</uC99>
             <uGnu>0</uGnu>
             <useXO>0</useXO>
             <v6Lang>0</v6Lang>
@@ -336,7 +336,7 @@
             <v6WtE>0</v6WtE>
             <v6Rtti>0</v6Rtti>
             <VariousControls>
-              <MiscControls>--no-multibyte-chars --c99</MiscControls>
+              <MiscControls>--no-multibyte-chars</MiscControls>
               <Define>STM32F10X_HD, USE_STDPERIPH_DRIVER, VECT_TAB_OFFSET=0</Define>
               <Undefine></Undefine>
               <IncludePath>..\Libraries\CMSIS;..\Libraries\FWlib\inc;..\Libraries\mbedtls\include;..\src</IncludePath>
@@ -597,6 +597,11 @@
               <FileName>boot_main.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\src\boot_main.c</FilePath>
+            </File>
+            <File>
+              <FileName>uid_flag.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\src\uid_flag.c</FilePath>
             </File>
           </Files>
         </Group>

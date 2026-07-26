@@ -14,6 +14,8 @@
  *     └─ state == IDLE / other                → 跳转 App
  *
  * 【升级流水线 boot_upgrade()】
+ *   blob 格式: [IV 16B] [AES-CTR 密文] [HMAC-SHA256 32B]
+ *
  *   Step a ─ 读片外固件头 (fw_header magic/size)
  *         ─ 读 IV (blob 首 16B) 和 HMAC (blob 末 32B)
  *         ─ 失败 → upgrade_result=SPI_ERROR → 跳转当前 App
@@ -31,13 +33,7 @@
  *         ─ 写备份固件头 (FW_BACKUP_MAGIC)
  *         ─ 失败 → upgrade_result=BACKUP_FAIL → 跳转当前 App
  *
- *   Step d ─ 擦除片内 App 区 (256KB, 128 页 × 2KB)
- *
- *   Step e ─ 流式解密写入
- *         ─ 读片外密文 (偏移 16，跳过 IV)
- *         ─ AES-256-CTR 解密
- *         ─ 逐半字写入片内 flash
- *         ─ 失败 → 从备份区回滚 → upgrade_result=WRITE_ROLLBACK
+ *   Step d+e ─ 擦除 + 流式解密写入新固件 (写入地址 FW_WRITE_ADDR = 0x0800F800)
  *
  *   Step f ─ 成功
  *         ─ new_version 移入 cur_version
@@ -67,6 +63,7 @@
 #include <string.h>
 
 /* ---- 片内 App 区地址与大小 ---- */
+#define FW_WRITE_ADDR    0x0800F800u    /* 解密后写入起始地址 (含 FW_VERSION + App) */
 #define APP_AREA_START   0x08010000u    /* App 起始地址 (设计文档 §7.1) */
 #define APP_AREA_SIZE_KB 288u           /* App 区大小 256KB */
 #define BLOCK_SIZE       1024u          /* 流式处理块大小 1KB            */
@@ -90,6 +87,7 @@
 
 /* ---- 内部函数声明 ---- */
 static void boot_upgrade(void);
+static void boot_rollback(void);
 /*
  * key_area_fill_padding() -- 首次上电时填充密钥区随机字节
  *
@@ -104,8 +102,8 @@ static void boot_upgrade(void);
  */
 static void key_area_fill_padding(void)
 {
-    /* 已填充过则跳过 */
-    if (*(volatile uint8_t *)KEY_AREA_START != 0xFF) return;
+    /* 已填充过则跳过 (检查前4字节，避免单字节0xFF误判：1/256→1/2³²) */
+    if (*(volatile uint32_t *)KEY_AREA_START != 0xFFFFFFFFu) return;
 
     uint8_t uid[UID_LEN];
     memcpy(uid, (const void *)UID_ADDR, UID_LEN);
@@ -217,6 +215,14 @@ void boot_main(void)
          * 通过 NVIC_SystemReset() 软复位。Bootloader 接管升级。
          */
         boot_upgrade();
+        break;
+
+    case OTA_STATE_ROLLBACK_REQUESTED:
+        /*
+         * App 收到"立即回滚"命令 → 置 ROLLBACK_REQUESTED → NVIC_SystemReset()
+         * Bootloader 直接执行回滚，无需验签新固件 (恢复的是上次升级时备份的旧固件)。
+         */
+        boot_rollback();
         break;
 
     case OTA_STATE_UPGRADING:
@@ -397,12 +403,13 @@ static void boot_upgrade(void)
        无返回错误码 (当前简化)，建议后续版本加入返回值检查。 */
 
     /* ====================================================================
-     * Step d+e: 擦除片内 App 区 + 流式解密写入新固件
+     * Step d+e: 擦除目标 flash 区域 + 流式解密写入新固件
      *
-     * 擦除: 256KB = 128 页 × 2KB/page，逐页擦除。
+     * 写入起始地址 FW_WRITE_ADDR = 0x0800F800 (含 FW_VERSION + App)
+     * 擦除: 2KB 页对齐, 从 0x0800F800 到 App 代码末尾
      * 解密: AES-256-CTR 流式解密 (无需 padding)，边读边解密边写。
      *
-     * 密文在片外 blob[16 : size-32] (跳过首 IV 和末 HMAC)。
+     * 密文在片外 blob[16 : size-32] (跳过首 IV 16B 和末 HMAC 32B)
      * 每 1KB 块解密后逐半字 (16-bit) 写入片内 flash。
      *
      * STM32F103VE 片内 flash 特性:
@@ -410,7 +417,15 @@ static void boot_upgrade(void)
      *   - 编程最小单位: 16-bit (半字)
      *   - 必须在擦除后 (全 0xFF) 才能编程，且每个半字只能编程一次
      * ==================================================================== */
-    flash_int_erase_area(APP_AREA_START, APP_AREA_SIZE_KB);
+    {
+        uint32_t ct_size     = blob_size - 48;   /* 密文 = 总长 - IV(16) - HMAC(32) */
+        uint32_t erase_end   = FW_WRITE_ADDR + ct_size;
+        uint32_t erase_size_kb = ((erase_end - (FW_WRITE_ADDR & ~(2048u - 1))
+                                    + 2047u) / 1024u);
+
+        /* 页对齐擦除 */
+        flash_int_erase_area(FW_WRITE_ADDR & ~(2048u - 1), erase_size_kb);
+    }
 
     {
         uint32_t ct_size   = blob_size - 48;   /* 密文 = 总长 - IV(16) - HMAC(32) */
@@ -432,7 +447,7 @@ static void boot_upgrade(void)
             /* 逐半字写入片内 flash */
             for (uint32_t i = 0; i < chunk; i += 2) {
                 uint16_t hw = plain[i] | ((uint16_t)plain[i + 1] << 8);
-                flash_int_program_halfword(APP_AREA_START + ct_offset + i, hw);
+                flash_int_program_halfword(FW_WRITE_ADDR + ct_offset + i, hw);
             }
 
             ct_offset += chunk;
@@ -465,5 +480,105 @@ static void boot_upgrade(void)
     /* 跳转新 App (不返回)。
        注意: IWDG 启动应在 jump_to_app() 之前完成。
        当前简化版本未在此处启动 IWDG，需在后续集成时补充。 */
+    jump_to_app();
+}
+
+/* ========================================================================
+ * boot_rollback()  — 回滚到备份固件
+ *
+ * 在 state == ROLLBACK_REQUESTED 时调用。
+ * 从 W25Q64 备份区读取上次升级时备份的旧固件 blob:
+ *   [备份 IV 16B][AES-256-CTR 密文][HMAC-SHA256 32B]
+ * 验签 → 解密 → 擦除 → 写入 → 跳转旧 App。
+ *
+ * 失败: upgrade_result=ROLLBACK_FAIL → state=IDLE → 跳转当前 App
+ * ======================================================================== */
+static void boot_rollback(void)
+{
+    ota_param_t p;
+    fw_header_t bak_hdr;
+    uint8_t  iv[16];
+    uint8_t  calc_hmac[32];
+    uint8_t  bak_hmac[32];
+    uint32_t bak_size;
+    uint32_t remaining;
+    uint32_t offset;
+    uint8_t  buf[BLOCK_SIZE];
+
+    /* ---- Step 1: 检查备份是否存在 ---- */
+    flash_ext_read(FLASH_EXT_BACKUP_HEADER, (uint8_t*)&bak_hdr, sizeof(bak_hdr));
+    if (bak_hdr.magic != FW_BACKUP_MAGIC) {
+        /* 无备份, 无法回滚 */
+        param_read(&p);
+        p.state          = OTA_STATE_IDLE;
+        p.upgrade_result = OTA_RESULT_ROLLBACK_FAIL;
+        param_write(&p);
+        jump_to_app();
+        return;
+    }
+    bak_size = bak_hdr.size;
+
+    /* ---- Step 2: 读取备份 IV 和 HMAC ---- */
+    flash_ext_read(FLASH_EXT_BACKUP_AREA, iv, 16);
+    flash_ext_read(FLASH_EXT_BACKUP_AREA + bak_size - 32, bak_hmac, 32);
+
+    /* ---- Step 3: HMAC 验签备份 blob ---- */
+    remaining = bak_size - 32;
+    offset    = 0;
+
+    crypto_hmac_sha256_init(BOOT_MASTER_HMAC_KEY);
+
+    while (remaining > 0) {
+        uint32_t chunk = (remaining > BLOCK_SIZE) ? BLOCK_SIZE : remaining;
+        flash_ext_read(FLASH_EXT_BACKUP_AREA + offset, buf, chunk);
+        crypto_hmac_sha256_update(buf, chunk);
+        offset    += chunk;
+        remaining -= chunk;
+    }
+    crypto_hmac_sha256_final(calc_hmac);
+
+    if (memcmp(calc_hmac, bak_hmac, 32) != 0) {
+        param_read(&p);
+        p.state          = OTA_STATE_IDLE;
+        p.upgrade_result = OTA_RESULT_ROLLBACK_FAIL;
+        param_write(&p);
+        jump_to_app();
+        return;
+    }
+
+    /* ---- Step 4: 擦除 App 区 ---- */
+    flash_int_erase_area(APP_AREA_START, APP_AREA_SIZE_KB);
+
+    /* ---- Step 5: 流式解密 + 写入片内 ---- */
+    {
+        uint32_t ct_size   = bak_size - 48;   /* - IV(16) - HMAC(32) */
+        uint32_t ct_offset = 0;
+
+        crypto_aes_ctr_init(BOOT_MASTER_AES_KEY, iv);
+
+        while (ct_size > 0) {
+            uint32_t chunk = (ct_size > BLOCK_SIZE) ? BLOCK_SIZE : ct_size;
+
+            flash_ext_read(FLASH_EXT_BACKUP_AREA + 16 + ct_offset, buf, chunk);
+
+            uint8_t plain[BLOCK_SIZE];
+            crypto_aes_ctr_crypt(buf, plain, chunk);
+
+            for (uint32_t i = 0; i < chunk; i += 2) {
+                uint16_t hw = plain[i] | ((uint16_t)plain[i + 1] << 8);
+                flash_int_program_halfword(APP_AREA_START + ct_offset + i, hw);
+            }
+
+            ct_offset += chunk;
+            ct_size   -= chunk;
+        }
+    }
+
+    /* ---- Step 6: 完成 ---- */
+    param_read(&p);
+    p.state          = OTA_STATE_IDLE;
+    p.upgrade_result = OTA_RESULT_ROLLBACK_OK;
+    param_write(&p);
+
     jump_to_app();
 }

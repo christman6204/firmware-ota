@@ -14,6 +14,7 @@
 #define OTA_STATE_DOWNLOADED        2u
 #define OTA_STATE_UPGRADE_REQUESTED 3u
 #define OTA_STATE_UPGRADING         4u
+#define OTA_STATE_ROLLBACK_REQUESTED 5u
 
 /* Bootloader 升级结果码 */
 #define OTA_RESULT_NONE             0u
@@ -23,6 +24,8 @@
 #define OTA_RESULT_SPI_ERROR        4u
 #define OTA_RESULT_WRITE_ROLLBACK   5u
 #define OTA_RESULT_BOOT_FAIL        6u
+#define OTA_RESULT_ROLLBACK_OK      7u
+#define OTA_RESULT_ROLLBACK_FAIL    8u
 
 /* 参数区结构体（64 字节，与设计文档一致） */
 typedef struct {

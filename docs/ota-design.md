@@ -144,14 +144,14 @@ Bootloader 读标志 -> 先校验新固件 HMAC（verify-before-write，失败�
 | `target` | ENUM('mcu','esp') | 目标芯片 |
 | `version` | VARCHAR(32) | 版本号 |
 | `oss_key` | VARCHAR(256) | OSS 对象 key |
-| `file_size` | INT | **加密 blob** 字节数（= IV 16B + 密文 + HMAC 32B；设备下载/MQTT payload 的 size 均为此值） |
-| `iv` | BINARY(16) | AES-CTR 初始向量（每版本发布时随机生成一次；仅服务端记录/审计，不下发设备） |
-| `hmac` | BINARY(32) | HMAC-SHA256（覆盖 IV + 密文；仅服务端记录/审计，不下发设备） |
+| `file_size` | INT | **加密 blob** 字节数（= IV 16B + 密文 + HMAC 32B；本地加密工具输出值） |
+| `iv` | BINARY(16) | AES-CTR 初始向量（本地加密时随机生成；管理员录入，仅作审计） |
+| `hmac` | BINARY(32) | HMAC-SHA256（覆盖 IV + 密文；本地加密时计算；管理员录入，仅作审计） |
 | `release_notes` | TEXT | 发布说明 |
 | `status` | ENUM | draft/released/archived |
 | `created_at` | DATETIME | |
 
-> 说明（方案 A + 每版本加密一次）：固件**发布时加密一次**，密文 blob（`IV+密文+HMAC`）存 OSS，`oss_key`/`iv`/`hmac` 按版本记入本表；同一版本的所有 OTA 任务复用此 blob，不重复加密。设备端从 blob 固定偏移读取 IV/HMAC，不依赖 MySQL 这两列——此处两列仅供服务端审计/重算校验。
+> 说明（方案 A + 本地离线加密）：固件**在本地离线加密**（`tools/encrypt_firmware.py`），密文 blob（`IV+密文+HMAC`）由管理员上传 OSS 后在后台录入元数据；同一版本的所有 OTA 任务复用此 blob，不重复加密。设备端从 blob 固定偏移读取 IV/HMAC，不依赖 MySQL 这两列——此处两列仅供服务端审计。
 
 ### `ota_tasks` 表
 
@@ -184,11 +184,10 @@ Bootloader 读标志 -> 先校验新固件 HMAC（verify-before-write，失败�
 
 ```
 # 固件管理
-POST   /api/v1/firmwares              # 上传 bin (multipart)
+POST   /api/v1/firmwares              # 上传加密 blob (multipart) + 元数据 (version/iv/hmac)
 GET    /api/v1/firmwares              # 列表
-GET    /api/v1/firmwares/{id}         # 详情（含 file_size/SHA256/版本号；返回管理员本地校验所需元数据）
-GET    /api/v1/firmwares/{id}/download # 下载明文 bin（仅管理员校验用，不经 OSS 签名 URL，低频无压力）
-POST   /api/v1/firmwares/{id}/release # 发布（触发一次性加密：生成 IV、产出密文 blob 存 OSS，见 §7.4）
+GET    /api/v1/firmwares/{id}         # 详情（含 file_size/版本号/iv/hmac）
+POST   /api/v1/firmwares/{id}/release # 发布（标记为 released，供 OTA 任务选择）
 DELETE /api/v1/firmwares/{id}
 
 # 设备管理
@@ -230,6 +229,8 @@ POST   /api/v1/device/ota/report      # 上报升级结果
 > **心跳主路径是 MQTT，不是 HTTP**：STM32 每 60s 经 UART CMD 0x0A 发心跳 → ESP-07S publish 到 `device/heartbeat/{dev_id}`（§5）→ EMQX 规则引擎更新 `devices.last_seen`（§15.3）。`POST /api/v1/device/heartbeat` 仅作 MQTT 长时间不可用时的 HTTP 兜底上报，两者更新的是同一个 `last_seen` 字段，不重复计时。
 
 > **固件下载（直连 OSS）**：固件字节流**不经过 FastAPI**。后端生成 OSS 限时签名 URL（5min 过期，期内可多次 Range 请求）随 MQTT 下发（或在 `/ota/check` 返回），ESP-07S 直接从 OSS 拉流，OSS 原生支持 Range 断点续传。FastAPI 不经手固件内容，仅负责签发 URL 与接收结果上报，避免万级并发下载压垮单台 ECS。（注：此处"直连 OSS"是下载路径决策，与 §7.1 的"方案 A"blob 存储约定是两件独立的事。）
+
+> **固件加密（本地离线）**：加密在本地离线完成（`tools/encrypt_firmware.py`），服务器**不持有主密钥**、**不持有明文固件**。管理员本地加密后将 blob 上传 OSS，然后在管理后台创建固件记录（录入 version / file_size / iv / hmac / oss_key）。服务器只负责存储和转发 blob。
 
 ### 鉴权
 
@@ -364,9 +365,10 @@ device/config/resp/{dev_id}     # 配置读取应答（设备→云），data < 
 0x0800_0000  Bootloader   (48KB = 24页)  永不升级，出厂烧录
 
 > Bootloader 区尾部 256B 为密钥区 (0x0800BF00~0x0800BFFF)：前 136B 随机填充 + AES_KEY(32B @0x0800BF88) + HMAC_KEY(32B @0x0800BFA8) + 后 56B 随机填充。Bootloader 编译时 __at() 写入，App 运行时指针读取。
-0x0800_C000  加密ID标记区  (2KB = 1页)   首次上电标记 (0x1234)
-0x0800_C800  加密ID区      (2KB = 1页)   UID绑定生成的设备指纹 (16B)
+0x0800_C000  加密ID标记区  (2KB = 1页)   首次上电标记 (0x1234, uid_flag.c 编译期放置)
+0x0800_C800  加密ID区      (2KB = 1页)   UID绑定生成的设备指纹 (16B @页内偏移128B)
 0x0800_D000  保留区1      (12KB = 6页)   预留
+   0x0800_F800  FW_VERSION   (2B)           固件版本常量 (分散加载定位)
 0x0801_0000  App          (288KB = 144页) OTA 目标
 0x0805_8000  参数区        (96KB = 48页)  状态机 + 版本 + 升级标志
 0x0807_0000  保留区2       (64KB = 32页)  预留
@@ -378,6 +380,69 @@ device/config/resp/{dev_id}     # 配置读取应答（设备→云），data < 
 0x10_2000  保留
 ```
 
+#### 固件版本常量 (FW_VERSION)
+
+App 固件中定义 16-bit 版本号常量，编译期写入 `0x0800F800`（保留区 1 内），由分散加载文件的独立段定位。
+
+**格式**：高 8 位 = 主版本，低 8 位 = 次版本。例 `0x0102` = v1.02。
+
+**实现**：
+```c
+// app_version.c
+const uint16_t APP_FW_VERSION
+    __attribute__((section(".fw_version")))
+    = FW_VER_VALUE;       // 宏展开为 ((MAJOR << 8) | MINOR)
+```
+
+**分散加载**：
+```
+LR_FW_VERSION 0x0800F800 0x00000004 {
+  ER_FW_VERSION 0x0800F800 0x00000004 {
+    *.o (.fw_version)          // 只捕获版本常量
+  }
+}
+```
+
+**用途**：
+- 产线工具 (`factory_tool.py`) 从 HEX 自动读取版本号，无需人工填写
+- Bootloader 可通过读 `0x0800F800` 获取编译期版本（fallback）
+- 服务器可校验 flash 镜像中此位置确认固件版本
+
+**与 OTA blob 的关系**：
+- FW_VERSION 随 App HEX 一起进入加密 blob (合并所有段, 间隙填 0xFF)
+- OTA 升级后 FW_VERSION 自动更新为新版本号
+
+#### 分散加载：debug vs updata_app
+
+App 工程有两个 target，分散加载文件不同：
+
+**debug target** (`debug.sct`) — 调试用，三段布局：
+
+| 段 | 地址 | 大小 | 内容 |
+|---|---|---|---|
+| LR_VECTOR | 0x08000000 | 1KB | 向量表 + __scatterload 启动代码 |
+| LR_FW_VERSION | 0x0800F800 | 4B | 固件版本常量 |
+| LR_IROM1 | 0x08010000 | 288KB | 代码 + RO + XO |
+
+```
+硬件复位 → SP/PC 从 0x08000000 取 → 向量表已就位 → 正常启动
+            ┌─ VECT_TAB_OFFSET = 0x0000
+无需 Bootloader，可直接调试。调试完后需重新烧录 Bootloader 恢复 OTA。
+```
+
+**updata_app target** (`updata_app.sct`) — 升级固件用：
+
+| 段 | 地址 | 大小 | 内容 |
+|---|---|---|---|
+| LR_FW_VERSION | 0x0800F800 | 4B | 固件版本常量 |
+| LR_IROM1 | 0x08010000 | 288KB | 代码 + RO + XO + 向量表 |
+
+```
+Bootloader → 设置 SCB->VTOR = 0x08010000 → 跳转 App
+             ┌─ VECT_TAB_OFFSET = 0x10000
+向量表在 App 区起始，无 Bootloader 时硬件复位会崩溃（预期行为）。
+```
+
 ### 7.2 App OTA 模块（新增核心）
 
 App 运行时挂一个 OTA 后台任务，主业务不阻塞：
@@ -386,42 +451,79 @@ App 运行时挂一个 OTA 后台任务，主业务不阻塞：
 UART DMA 接收 + 空闲中断 -> 解帧 -> OTA 状态机
 
 状态机（存在片内参数区）:
-  IDLE -> DOWNLOADING -> DOWNLOADED -> UPGRADE_REQUESTED -> (软复位)
-  干净失败（CRC 错/写 flash 错/重传超限）-> IDLE + 上报错误
-  下载中途断电（非干净失败）-> 状态保持 DOWNLOADING，receive_offset 已在片外固件头持久化
-                              -> 重启后 ESP 查 offset 用 Range 续传，不回 IDLE
+  IDLE → DOWNLOADING → DOWNLOADED → UPGRADE_REQUESTED → (软复位) → UPGRADING → IDLE
+  干净失败（CRC 错/写 flash 错/重传超限）→ IDLE + 上报错误
+  下载中途断电（非干净失败）→ 状态保持 DOWNLOADING，receive_offset 已在片外固件头持久化
+                              → 重启后 ESP 查 offset 用 Range 续传，不回 IDLE
 
-收到开始升级 (CMD 0x03):
-  1. 解析 task_id + version + size
-  2. 写入参数区：task_id[16]、new_version、state = DOWNLOADING
-  3. 回 CMD 0x04 ACK（start_offset = 已有 receive_offset，0 为全新）
+  **回滚 (立即生效)**：
+  App 收到 CMD 0x0B "立即回滚" → state = ROLLBACK_REQUESTED → NVIC_SystemReset()
+  Bootloader 启动后检测到 ROLLBACK_REQUESTED → boot_rollback():
+    ① 检查 W25Q64 备份区 magic
+    ② HMAC 验签备份 blob
+    ③ 擦除片内 App 区
+    ④ AES-CTR 解密 + 写回片内
+    ⑤ state = IDLE, result = ROLLBACK_OK → 跳转旧 App
+  备份不存在/HMAC 失败 → result = ROLLBACK_FAIL → 跳转当前 App
 
-App 启动时（含升级后重启）:
-  1. 读参数区 upgrade_result：若 != 0，经 CMD 0x09 上报云端（task_id + result + version），然后清零
-  2. 读参数区 app_healthy 相关逻辑（见 §7.3 步骤 3）
-  3. 进入正常业务 + OTA 后台任务
+  **DOWNLOADED 状态滞留处理**：
+  - 场景: 固件下载完成但管理员未下发"立即升级"指令, 或"立即升级" MQTT 消息丢失
+  - 场景: DOWNLOADED 期间有新版本固件下发 → App 允许覆盖, 重置 state→DOWNLOADING 重新接收
+  - App 启动时检测到 state == DOWNLOADED → 经 CMD 0x09 上报服务器 `status=downloaded, awaiting upgrade command`
+  - 服务器据此在管理后台显示"待升级"状态, 提醒管理员手动触发或排查
 
-收到固件块 (CMD 0x05):
-  1. 解析 offset + data
-  2. 写片外 flash：固件区基地址 + offset（offset 即 blob 字节偏移，与 HTTP 下载偏移一致）
-  3. 更新固件头 receive_offset = offset + len
-  4. 回 ACK
+#### OTA 下载全流程 (App 侧)
 
-收到全部完成 (CMD 0x07):
-  1. 校验 receive_offset == 固件头 size（blob 完整落盘）
-  2. 通过: 状态 -> DOWNLOADED, STM32 回 ACK 给 ESP；ESP 随后经 MQTT device/ota/progress 上报"待升级"到云端
-  3. 失败: 上报错误, 状态 -> IDLE
-  （HMAC-SHA256 密码学校验由 Bootloader 在阶段3 负责，App 不持有密钥）
+**阶段 1 — 开始下载 (收到 CMD 0x03)**：
 
-收到立即升级 (CMD 0x08):
-  1. 状态 -> UPGRADE_REQUESTED
-  2. NVIC_SystemReset() 软复位
-  （备份由 Bootloader 负责，App 不参与 flash 备份逻辑）
+  1. 解析 task_id + version + size (blob 总字节数)
+  2. **擦除 W25Q64 旧固件头**（确保新任务从 offset=0 开始，不会残留旧任务的 receive_offset）
+  3. 写参数区：task_id、new_version、state = DOWNLOADING
+  4. 写 W25Q64 fw_header: magic="FWHD", size, version, receive_offset=0
+  5. 回 CMD 0x04 ACK: start_offset = 0
+
+**阶段 2 — 接收固件块 (循环 CMD 0x05)**：
+
+  1. 解析 offset + data → 写 W25Q64 固件区基地址 + offset
+  2. receive_offset = offset + len → 更新 W25Q64 fw_header
+  3. 回 CMD 0x06 ACK (含新 receive_offset, ESP 用于进度上报)
+
+**阶段 2 续 — 掉电重启后续传**：
+
+  1. Bootloader 见 state=DOWNLOADING → 不干预 → jump_to_app
+  2. App 启动: state=DOWNLOADING → 读 W25Q64 receive_offset
+  3. 拼 CMD 0x04 ACK (start_offset=receive_offset) → ESP 发起 Range 续传
+  4. 回到阶段 2 循环
+
+**阶段 3 — 下载完成 (收到 CMD 0x07)**：
+
+  1. 校验 receive_offset == fw_header.size
+  2. 通过: state = DOWNLOADED → 回 ACK → ESP 上报云"待升级"
+  3. 失败: 上报错误, state = IDLE
+  (HMAC-SHA256 密码学校验由 Bootloader 负责，App 不持有密钥)
+
+**阶段 4 — 触发升级 / 回滚**：
+
 ```
+收到"立即升级"(CMD 0x08):
+  state = UPGRADE_REQUESTED → NVIC_SystemReset()
+
+收到"立即回滚"(CMD 0x0B):
+  state = ROLLBACK_REQUESTED → NVIC_SystemReset()
+```
+
+**App 启动时（每次）**：
+
+  1. 读 upgrade_result: != 0 → CMD 0x09 上报云(task_id+result+version) → 清零
+  2. 读 state:
+     - UPGRADING + app_healthy=0 → App 健康 → 写 app_healthy=1, state=IDLE
+     - DOWNLOADED → CMD 0x09 上报 "awaiting upgrade command"
+     - DOWNLOADING → 回到阶段 2 续传输
 
 **关键实现**：
 - UART 用 DMA + 空闲中断收变长帧，不阻塞主循环
-- 片外 flash 写入按扇区擦除（4KB），维护"已擦除扇区位图"避免重复擦
+- W25Q64 写入按扇区擦除（4KB），维护"已擦除扇区位图"
+- **收到 CMD 0x03 必须先擦除旧固件头**，否则不同任务的 receive_offset 会错乱
 - `receive_offset` 每块更新前先写后校验，防掉电丢失
 
 ### 7.3 Bootloader（集中升级职责）
@@ -491,18 +593,28 @@ Bootloader 不涉及 UART 协议，集中负责备份片内、读片外新固件
 
 **密文格式**：
 ```
-[IV (16B, 每版本发布时随机生成一次)] + [Encrypted Firmware Data] + [HMAC-SHA256 (32B)]
+[IV (16B, 每版本发布时随机生成一次)] + [AES-256-CTR 密文] + [HMAC-SHA256 (32B)]
 ```
 HMAC 计算范围：`IV || Encrypted_Data`，确保 IV 不可篡改。
+密文首字节对应 flash 地址 `FW_WRITE_ADDR = 0x0800F800` (Bootloader 硬编码)。
 
-**服务器端加密流程**（发布时加密一次，blob 按版本复用）：
-1. 管理员上传明文 bin → 服务端存入 OSS 私有 bucket（明文留存，供后续审计/重新加密；同时前端可用于下载校验，见 §4）
-2. **发布固件时**，后端读明文
-3. 生成随机 IV (16B) —— 每个固件版本仅生成一次
-4. AES-256-CTR 加密固件（主密钥 + IV）
-5. 计算 HMAC-SHA256(主密钥, IV || 密文)
-6. 拼接密文 bin：`IV + 密文 + HMAC`
-7. 密文 bin 上传 OSS（独立 key），并把 `oss_key` / `iv` / `hmac` 写入 `firmwares` 表
+**本地离线加密流程**（发布时加密一次，blob 按版本复用）：
+
+> **安全原则：服务器不持有主密钥，不持有明文固件。加密完全在本地离线完成。**
+
+1. 管理员在本地运行 `tools/encrypt_firmware.py`：
+   ```
+   python encrypt_firmware.py app_v1.2.bin --keys keys.json -o app_v1.2_blob.bin
+   ```
+2. 脚本执行：
+   - 生成随机 IV (16B) —— 每个固件版本仅生成一次
+   - AES-256-CTR 加密固件（主密钥 + IV）
+   - 计算 HMAC-SHA256(主密钥, IV || 密文)
+   - 拼接加密 blob：`IV + 密文 + HMAC`
+   - 输出 blob 文件 + 打印 IV / HMAC hex / file_size
+3. 管理员将加密 blob 上传 OSS
+4. 在管理后台创建固件记录，填入 version + file_size + iv + hmac + oss_key
+5. 服务器存储和转发 blob，**不解密、不持有密钥**
 
 > **复用约定**：同一固件版本只加密一次，其密文 blob 被所有针对该版本的 OTA 任务复用（任务不重新加密）。CTR 模式下，同版本 = 同明文，用固定 (主密钥, IV) 重复加密得到相同密文，不泄露额外信息，密码学上安全；因此 IV 只需保证"不同版本互不相同"（每次发布随机生成即可）。
 
@@ -527,7 +639,68 @@ HMAC 计算范围：`IV || Encrypted_Data`，确保 IV 不可篡改。
 - ✓ 传输全程加密：HTTPS（外层）+ 固件加密（内层），双重保护
 - ✓ 片内 App 区是明文：但 App 不含密钥，App 被反编译无密钥泄露
 - ✓ Bootloader 含主密钥：RDP Level 1 保护，SWD 不可读
-- ⚠ 剩余风险：主密钥所有设备共用，单设备被深度攻破（如侧信道攻击）则全设备可解密。如需更高安全，未来可升级为每设备一密钥（OTP 存储）
+- ✓ **服务器不持有主密钥**：加密在本地离线完成，服务器被入侵不会泄露密钥
+- ✓ **服务器不持有明文固件**：OSS 只存加密 blob，明文仅在管理员本地
+- ⚠ 剩余风险：主密钥所有设备共用，单设备被深度攻破（侧信道攻击）则全设备固件可被解密逆向。但 UID 绑定（§7.5）已阻止批量克隆——换了芯片 UID 不同，加密 ID 不匹配，App 拒绝运行。攻击者要同时具备物理访问 + 侧信道能力，门檻极高。如需更高安全（如固件 IP 保护），未来可升级为每设备一密钥（OTP 存储）
+
+#### 产线工具 (tools/)
+
+Windows GUI 产线工具 `tools/factory_tool.py`，三个 Tab：加密 | 合并 | 密钥。
+
+**文件命名规范**：
+- Bootloader HEX：`BT_<设备型号>_xxx.hex`（如 `BT_XL800.hex`）
+- App HEX：`APP_<设备型号>_<版本>.hex`（如 `APP_XL800_1.21.hex`）
+- 版本号从 HEX 内容 `0x0800F800` 读取，不依赖文件名
+
+**1. 加密 Tab**：
+- 选择 `APP*.hex` → 自动读 `0x0800F800` 获取版本号 → 自动检测型号
+- 非 `APP*` 开头文件名拦截报错
+- 多段 HEX 自动合并（间隙填 0xFF，从 0x0800F800 起）→ AES-256-CTR + HMAC-SHA256 → 输出 `UP_<型号>_V<版本>.bin`
+- 中间明文文件：`UP_<型号>_V<版本>_no_encry.bin`（可校验加密前内容）
+- 密钥未加载时提示
+
+**2. 合并 Tab**：
+- 一个浏览按钮，Ctrl+多选 2 个文件（`BT*` + `APP*`），且只能选 2 个
+- 选文件时即时校验：缺少 BT/APP 前缀、设备型号不一致 → 弹窗提示重新选择
+- BIN/HEX 格式可选，填充字节可选 0xFF/0x00
+- BIN 输出到 App 区末尾（~350KB），HEX 跳过间隙
+- 输出命名：`FA_<型号>_V<版本>.bin` (或 .hex)
+- 日志显示 bootloader 段（BL 代码 + 加密ID标记 4B）+ app 段（固件版本 + App 代码）
+- `0x0800C000` UID 标记由 Bootloader `uid_flag.c` 编译期生成，合并工具无需处理
+
+**3. 密钥 Tab**：
+- 进入 Tab 需密码解锁（225219），离开后自动上锁
+- 显示/隐藏密钥内容需再次输入密码
+- 密钥文件路径 + 所有文件选择路径自动记忆（`.factory_tool_config.json`），下次启动自动恢复
+
+**配套脚本**：
+| 脚本 | 用途 |
+|---|---|
+| `gen_master_keys.py` | 生成 AES + HMAC 主密钥对 |
+| `encrypt_firmware.py` | 命令行加密 `app.bin` → OTA blob |
+| `hex_utils.py` | Intel HEX 解析/合并/版本读取核心库 |
+
+**主密钥管理**：
+
+产线一次性生成三把密钥（`gen_master_keys.py`）：
+
+| 密钥 | 长度 | 存储位置 | 用途 |
+|------|------|---------|------|
+| `aes_key` | 32B | `bootloader/src/crypto.c`, `keys.json` | AES-256-CTR 固件加密/解密 |
+| `hmac_key` | 32B | `bootloader/src/crypto.c`, `keys.json` | HMAC-SHA256 固件签名/验签 |
+| `master_device_key` | 32B | 服务器环境变量, `keys.json` | 派生每台设备 MQTT/HTTP 认证 secret |
+
+**设备认证密钥派生**（`gen_device_secret.py`）：
+```python
+secret = HMAC-SHA256(master_device_key, dev_id_le)[:16].hex()
+# dev_id 10001 → secret = "e96d17a7a47a9fff..."
+```
+
+- `secret` 在产线烧录到 STM32 参数区 + ESP flash
+- `secret_hash` 写入服务器 `devices` 表 (或服务端重算比对, 不存明文)
+- 设备 MQTT CONNECT: username=`dev_id`, password=`secret`
+- 设备 HTTP 调用: body 带 `dev_id` + `secret`
+- `keys.json` 禁止提交 git（`.gitignore` 已排除）
 
 ### 7.5 设备防克隆（UID 绑定）
 
@@ -543,7 +716,7 @@ HMAC 计算范围：`IV || Encrypted_Data`，确保 IV 不可篡改。
      a. 读 UID (0x1FFFF7E8, 12B)
      b. 加密ID = HMAC-SHA256(主密钥, UID) 取前 16B
      c. 写加密ID 到 0x0800C800
-     d. 擦除  �  所在页 (整页变 0xFF)
+     d. 擦除  �  所在页 (整页变 0xFF)
      e. 进入正常 Bootloader 流程
   3. else (标记 == 0xFFFFFFFF 或中间态):
      → 加密ID 已生成，跳至正常流程
@@ -573,8 +746,11 @@ App 每次启动:
 | 替换 Bootloader + App 全部 | 攻击者可绕过——但需物理访问 + 精通 ARM 汇编重写 Bootloader 跳转逻辑，成本极高 |
 
 **涉及的文件**：
-- Bootloader 侧：`boot_main.c`（首次上电生成加密 ID）
-- App 侧：`envir-control/app/`（启动时校验加密 ID，需复制 HMAC 派生代码）
+| 文件 | 职责 |
+|---|---|
+| `bootloader/src/uid_flag.c` | 编译期放置 `0x00001234` @0x0800C000（`__attribute__((at))`） |
+| `bootloader/src/boot_main.c` | `uid_bind_first_run()` — 检测 0x1234 → HMAC-SHA256(UID) → 写加密 ID → 擦标记页 |
+| `envir-control/app/uid_verify.c` | App 启动时 `uid_verify()` — 重算 HMAC → 比对加密 ID → 不匹配则复位 |
 
 ---
 
