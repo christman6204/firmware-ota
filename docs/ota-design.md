@@ -39,15 +39,38 @@
 
 ### 1.4 设备出厂预置（Provisioning）
 
-**方案 C — 产线批量预配置**：每台设备出厂前由产线工具一次性烧录以下信息到芯片 flash，出厂即可联网上线，无需现场配网：
+**产线烧录**（一次性，出厂即上线）：
 
-| 烧录目标 | 内容 |
-|---|---|
-| STM32 片内 flash — 参数区 | `dev_id`（uint32）—— 参数区掉电保持、OTA 不擦除，确保固件升级后身份不丢 |
-| STM32 片内 flash — Bootloader 区 | 主密钥（AES+HMAC 共 64B，所有设备相同，RDP Level 1 保护） |
-| ESP-07S flash | WiFi SSID/密码、MQTT broker 地址（DNS 域名）、`dev_id` + `secret`（16B，取 `HMAC-SHA256(master_device_key, dev_id)` 前 16 字节；供 MQTT 认证和 topic 拼接） |
+| 烧录目标 | 内容 | 说明 |
+|---|---|---|
+| STM32 — `factory.bin` | Bootloader + APP_INFO + App 完整镜像 | 合并工具 `factory_tool.py` 生成 |
+| STM32 — 参数区（`factory.bin` 内） | `dev_id`（uint32） | 产线分配，参数区 OTA 不擦除 |
+| ESP-07S flash | WiFi SSID/密码、MQTT broker 地址（DNS 域名）、`dev_id` | `secret` 不在产线烧录，由 STM32 首次上电后计算并下发 |
 
-> `dev_id` 的权威持有者是 STM32，ESP 持有产线烧录的副本仅用于 MQTT 连接认证。两者同批预置、应一致。secret 由服务端主设备密钥按 `HMAC-SHA256(master_device_key, dev_id)` 派生，服务端不存每设备明文 secret（验证时重算比对）。
+**首次上电自动配置**：
+
+```
+设备首次上电:
+  Bootloader → UID 绑定 → 参数区初始化 → jump_to_app()
+  App 启动:
+    ① dev_id 已在参数区
+    ② master_device_key 在 APP_INFO @0x0800F802（编译期写入）
+    ③ device_secret_gen(dev_id, secret)   ← STM32 自主计算
+    ④ 存 secret 到参数区（后续上电直接读取）
+    ⑤ UART → 发送 secret 给 ESP-07S
+    ⑥ ESP 保存 secret → MQTT CONNECT → 上线
+```
+
+**密钥分发（产线一次性生成）**：
+
+| 密钥 | 位置 | 用途 |
+|------|------|------|
+| `aes_key` | `bootloader/src/crypto.c`（编译进 BT） | AES-256-CTR 固件加解密 |
+| `hmac_key` | `bootloader/src/crypto.c`（编译进 BT） | HMAC-SHA256 固件签名 |
+| `master_device_key` | `app_info.c`（编译进 APP_INFO, scatter 定位 0x0800F802） | 派生每台设备认证 secret |
+
+> `secret = HMAC-SHA256(master_device_key, dev_id_le)[:16]`，`master_device_key` 只有一份权威来源（APP_INFO），不存多副本，不会出现不同步。<br>
+> 服务器端用 `gen_device_secret.py` 预计算所有 `dev_id` 的 secret，认证时重算比对，不存每设备明文 secret。
 
 ---
 
