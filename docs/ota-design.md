@@ -363,6 +363,55 @@ MQTT broker 地址、 等信息出厂时写入**默认值**（产线烧录），
 
 
 
+### 1.5 密钥体系总览（三把钥匙）
+
+为防后续遗忘，三把密钥的完整说明集中记录于此：
+
+| 密钥 | 长度 | 存储位置 | 用途 | 说明 |
+|------|------|---------|------|------|
+| `aes_key` | 32B | `bootloader/src/crypto.c` @0x0800BF88 | AES-256-CTR 固件加密/解密 | 所有设备相同，RDP L1 保护 |
+| `hmac_key` | 32B | `bootloader/src/crypto.c` @0x0800BFA8 | HMAC-SHA256 固件签名/验签 | 所有设备相同，与 AES_KEY 分离 |
+| `master_device_key` | 32B | `app/app_info.c` @0x0800F802 (APP_INFO 内) | **派生每台设备认证 secret** | 所有设备相同，唯一权威来源在 App 侧 |
+
+**master_device_key 的工作原理：**
+
+```
+同一把 master_device_key (编译在 APP_INFO @0x0800F802)
+     │
+     │  HMAC-SHA256(master_device_key, dev_id_le)
+     ▼
+  dev_id=10001 → secret = e96d17a7...  ← 每台设备不同
+  dev_id=10002 → secret = 8a3f2bc1...
+  dev_id=10003 → secret = 5c7b0e92...
+```
+
+**三把钥匙的完整流向：**
+
+```
+gen_master_keys.py → keys.json (离线加密保管)
+  │
+  ├─ aes_key (32B) ──→ bootloader/src/crypto.c __at__ @0x0800BF88
+  │     └─ 固件加解密: AES-256-CTR(pt, key) = ct   /   AES-256-CTR(ct, key) = pt
+  │
+  ├─ hmac_key (32B) ──→ bootloader/src/crypto.c __at__ @0x0800BFA8
+  │     └─ 固件签名: HMAC-SHA256(key, IV+密文) = 32B 签名
+  │        升级前验签: verify-before-write
+  │
+  └─ master_device_key (32B) ──→ app/app_info.c @0x0800F802 (APP_INFO 结构体内)
+        └─ 设备认证: device_secret_gen(dev_id, secret)
+              → secret = HMAC-SHA256(master_device_key, dev_id_le)[:16]
+              → STM32 首次上电自算 → 经 UART 发给 4G 模块
+              → 4G 模块用 dev_id + secret 做 MQTT CONNECT 认证
+              → 服务器同公式重算比对
+```
+
+**常见混淆澄清：**
+- `master_device_key` ≠ 固件加密密钥 — 它只管设备认证，不管固件加解密
+- `secret` ≠ `master_device_key` — secret 是派生值，每设备不同；master_device_key 是母钥，所有设备共用
+- `master_device_key` 不在 Bootloader 内 — 只在 APP_INFO 中（App 侧），Bootloader 不持有也不使用
+
+---
+
 ## 2. OTA 系统架构
 
 
