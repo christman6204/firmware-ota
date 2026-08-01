@@ -40,9 +40,24 @@
 
 ---
 
-## 3. Bootloader 工程 (`bootloader/`)
+## 3. Bootloader 工程 (`bootloader/`) — Keil: Bootloader.uvprojx
 
-裸机程序，位于 flash `0x08000000`，大小 48KB，负责 OTA 升级和设备防克隆。
+**独立 Keil 工程**，裸机程序（无 RTOS），1 个 Target。
+
+### Flash 分布（Bootloader Target）
+
+```
+地址            大小     内容
+0x08000000      48KB    Bootloader 代码
+  ├─ main.c          入口 + 闪灯诊断
+  ├─ boot_main.c     状态机 + 6步升级 + 回滚
+  ├─ crypto.c        AES + HMAC（含密钥 @0x0800BF88/BFA8）
+  ├─ flash_ext.c     W25Q64 SPI 驱动（SPI1, CS=PA4）
+  ├─ flash_int.c     片内 flash 驱动
+  ├─ param.c         参数区读写 + CRC32
+  ├─ uid_flag.c      UID 标记 0x1234 @0x0800C000
+  └─ jump_app.c      App 跳转
+```
 
 ### 3.1 目录结构
 
@@ -99,9 +114,50 @@ bootloader/
 
 ---
 
-## 4. App 工程 (`envir-control/`)
+## 4. App 工程 (`envir-control/`) — Keil: Fire_uCOS.uvprojx
 
-uC/OS-III 实时操作系统，位于 flash `0x08010000`，大小 288KB，负责全部业务逻辑。
+**独立 Keil 工程**，uC/OS-III 实时操作系统，**2 个 Target**（debug + updata_app）。
+
+### 4.1 两个 Target 的 Flash 分布对比
+
+**Target: debug（调试用，3 段分散加载）**
+
+```
+地址            大小      分散加载段          内容
+0x08000000      1KB      LR_VECTOR          向量表 (RESET + InRoot)
+                                          ↑ 调试时独立运行，无需 Bootloader
+0x0800F800      128B     LR_APP_INFO        app_info_t (fw_version + master_device_key)
+0x08010000      288KB    LR_IROM1           代码 + RO + XO + RW
+```
+
+- VECT_TAB_OFFSET = **0x0000**（向量表在 0x08000000）
+- 调试时直接烧录整个工程到芯片，独立运行
+- 包含向量表，可脱离 Bootloader 直接运行
+- 输出文件：`IL_800_debug.axf`
+
+**Target: updata_app（升级固件用，2 段分散加载）**
+
+```
+地址            大小      分散加载段          内容
+0x0800F800      128B     LR_APP_INFO        app_info_t (fw_version + master_device_key)
+0x08010000      288KB    LR_IROM1           向量表(RESET) + 代码 + RO + XO + RW
+                                          ↑ 向量表在 App 代码起始处
+```
+
+- VECT_TAB_OFFSET = **0x10000**（向量表在 0x08010000）
+- 输出文件：`APP_型号_版本.hex`（factory_tool 加密输入）
+- **不含 0x08000000 处的向量表**，由 Bootloader 跳转到此
+
+**两个 Target 的关键区别：**
+
+| 对比项 | debug | updata_app |
+|--------|-------|-----------|
+| 分散加载段数 | 3 段 | 2 段 |
+| 向量表位置 | 0x08000000 (LR_VECTOR) | 0x08010000 (LR_IROM1 内) |
+| VECT_TAB_OFFSET | 0x0000 | 0x10000 |
+| 是否需要 Bootloader | 否（独立运行） | 是（Bootloader 跳转） |
+| 输出文件 | .axf (调试) | .hex (OTA 升级) |
+| factory_tool 处理 | 不参与 | 加密 + 合并出厂镜像 |
 
 ### 4.1 目录结构
 
