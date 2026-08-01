@@ -114,11 +114,11 @@ bootloader/
   ├─ @0               fw_version (2B)
   └─ @2               master_device_key (32B)
 0x08010000      288KB    App 代码 + 向量表           App 工程
-0x08058000      96KB     参数区                      Bootloader 写入 (ota_param_t + dev_id + secret)
+0x08058000      96KB     参数区                      App 初始化 + 运行时读写 (ota_param_t + dev_id + secret + 系统配置)
 0x08070000      64KB     保留                        -
 ```
 
-> **注意**：此布局是 Bootloader 工程 + App 工程（updata_app target）**全部烧录后**的完整系统 Flash 分布。
+> **注意**：此布局是 Bootloader 工程 + App 工程（updata_app target）**全部烧录后**的完整系统 Flash 分布。参数区由 App 首次上电写默认值 + 运行时维护，与 Bootloader 无关。
 > Bootloader 工程只烧录 0x08000000~0x0800BFFF 范围（48KB + 密钥区），
 > App 工程（updata_app target）烧录 0x0800F800~0x08057FFF 范围（APP_INFO + App 代码）。
 > 两者合并即为出厂烧录镜像（factory.bin），由 factory_tool 生成。
