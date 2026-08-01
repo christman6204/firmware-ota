@@ -92,7 +92,7 @@
 
 | STM32 — 参数区（`factory.bin` 内） | `dev_id`（uint32） | 产线分配，参数区 OTA 不擦除 |
 
-| 4G 模块 flash | APN 配置、MQTT broker 地址（DNS 域名）、`dev_id` | `secret` 不在产线烧录，由 STM32 首次上电后计算并下发 |
+| 4G 模块 flash | MQTT broker 地址（DNS 域名）、`dev_id` | `secret` 不在产线烧录，由 STM32 首次上电后计算并下发 |
 
 
 
@@ -145,7 +145,7 @@
 > 服务器端用 `gen_device_secret.py` 预计算所有 `dev_id` 的 secret，认证时重算比对，不存每设备明文 secret。
 #### 本地配置接口
 
-APN 配置、MQTT broker 地址、dev_id 等信息出厂时写入默认值（产线烧录），支持现场通过以下方式修改：
+MQTT broker 地址、dev_id 等信息出厂时写入默认值（产线烧录），支持现场通过以下方式修改：
 
 | 配置方式 | 接口 | 场景 |
 |---------|------|------|
@@ -161,14 +161,13 @@ APN 配置、MQTT broker 地址、dev_id 等信息出厂时写入默认值（产
 
   进入配置模式:
     调试串口: 上电时检测特定引脚电平 或 收到配置指令
-        -> CLI 交互: set apn xxx / set mqtt_host xxx / save / reboot
+        -> CLI 交互: set mqtt_host xxx / save / reboot
     HMI: 系统菜单 -> 网络设置 / 设备设置 -> 修改 -> 保存 -> 重启
 
 配置项列表：
 
 | 配置项 | 默认值来源 | 可修改 | 说明 |
 |--------|-----------|--------|------|
-| apn | 产线烧录 | 是 4G 接入点名称 (如 cmnet) |
 | sim_pin | 产线烧录 | 是 SIM 卡 PIN 码 (可选) |
 | mqtt_host | 产线烧录 | 是 | MQTT broker DNS 域名 |
 | mqtt_port | 编译期 (8883) | 是 | MQTT TLS 端口 |
@@ -178,7 +177,7 @@ APN 配置、MQTT broker 地址、dev_id 等信息出厂时写入默认值（产
 
 #### 本地配置接口
 
-APN 配置、MQTT broker 地址、 等信息出厂时写入**默认值**（产线烧录），支持现场通过以下方式修改：
+MQTT broker 地址、 等信息出厂时写入**默认值**（产线烧录），支持现场通过以下方式修改：
 
 | 配置方式 | 接口 | 场景 |
 |---------|------|------|
@@ -687,7 +686,7 @@ POST   /api/v1/device/ota/report      # 上报升级结果
 
 |---|---|---|
 
-| `net_config` | 网络配置 | `{"apn":"cmnet","mqtt_host":"mqtt.example.com","mqtt_port":8883}` |
+| `net_config` | 网络配置 | `{"mqtt_host":"mqtt.example.com","mqtt_port":8883}` |
 
 | `report_config` | 上报配置 | `{"report_interval_ms":5000,"sample_period_ms":1000,"sensors":"temp,hum,volt_in"}` |
 
