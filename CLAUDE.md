@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-本项目是 **STM32F103VE + 4G模块 OTA 升级 & 数据采集系统**。
+本项目是 **环境监控系统**。
 
 完整设计文档：`docs/ota-design.md`（Part A OTA + Part B 数据平台）
 
