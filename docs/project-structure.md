@@ -99,18 +99,29 @@ bootloader/
 | `param.c` | 参数区 magic+CRC32 校验 + 持久化读写 |
 | `uid_flag.c` | 编译期放置 0x1234 标记，首次上电触发 UID 绑定 |
 
-### 3.3 Flash 布局
+### 3.3 Flash 布局（Bootloader + App 全部烧录后的完整系统布局）
 
 ```
-0x08000000  Bootloader    48KB
-  └─ 0x0800BF00  密钥区 256B (AES_KEY@BF88 + HMAC_KEY@BFA8 + 随机填充)
-0x0800C000  UID标记        2KB  (0x1234, uid_flag.c 编译期)
-0x0800C800  加密ID         2KB  (首次上电 HMAC-SHA256 生成)
-0x0800F800  APP_INFO      128B  (fw_version + master_device_key) ← App 工程
-0x08010000  App           288KB
-0x08058000  参数区         96KB  (ota_param_t + dev_id + secret)
-0x08070000  保留           64KB
+地址            大小      内容                        来源工程
+0x08000000      48KB     Bootloader 代码             Bootloader 工程
+  └─ 0x0800BF00  256B    密钥区                      Bootloader 工程
+     ├─ @BF88           AES_KEY (32B)
+     ├─ @BFA8           HMAC_KEY (32B)
+     └─ 其余             随机填充
+0x0800C000      2KB      UID 标记 (0x1234)           Bootloader 工程 (uid_flag.c 编译期)
+0x0800C800      2KB      加密 ID                     Bootloader 首次上电生成 (HMAC-SHA256)
+0x0800F800      128B     APP_INFO                    App 工程 (app_info.c, scatter 定位)
+  ├─ @0               fw_version (2B)
+  └─ @2               master_device_key (32B)
+0x08010000      288KB    App 代码 + 向量表           App 工程
+0x08058000      96KB     参数区                      Bootloader 写入 (ota_param_t + dev_id + secret)
+0x08070000      64KB     保留                        -
 ```
+
+> **注意**：此布局是 Bootloader 工程 + App 工程（updata_app target）**全部烧录后**的完整系统 Flash 分布。
+> Bootloader 工程只烧录 0x08000000~0x0800BFFF 范围（48KB + 密钥区），
+> App 工程（updata_app target）烧录 0x0800F800~0x08057FFF 范围（APP_INFO + App 代码）。
+> 两者合并即为出厂烧录镜像（factory.bin），由 factory_tool 生成。
 
 ---
 
