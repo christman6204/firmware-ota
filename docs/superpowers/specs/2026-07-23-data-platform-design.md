@@ -6,13 +6,13 @@
 
 ## 1. 项目概述
 
-在现有 STM32 + ESP-07S OTA 升级系统基础上，叠加数据采集上报能力。10,000 台嵌入式设备通过 MQTT 上传遥测数据，云端存储、查询、展示。
+在现有 STM32 + 4G模块 OTA 升级系统基础上，叠加数据采集上报能力。10,000 台嵌入式设备通过 MQTT 上传遥测数据，云端存储、查询、展示。
 
 ### 1.1 核心指标
 
 | 指标 | 值 |
 |---|---|
-| 节点数 | 10,000 台 STM32 + ESP-07S |
+| 节点数 | 10,000 台 STM32 + 4G模块 |
 | 上报频率 | 每 5 秒 |
 | 单条大小 | ~1 KB |
 | 写入吞吐 | 2,000 条/s，~2 MB/s |
@@ -26,7 +26,7 @@
 ### 1.2 与 OTA 项目关系
 
 - 复用现有云基础设施（阿里云 ECS / RDS MySQL / EMQX / OSS）
-- 复用 STM32 + ESP-07S 硬件和 UART 帧协议
+- 复用 STM32 + 4G模块 硬件和 UART 帧协议
 - 复用 FastAPI + Vue3 + Element Plus 技术栈
 - OTA 能力保持不动，数据采集为增量功能
 
@@ -64,7 +64,7 @@
        │
   ┌────┴────────────┐
   │  10,000 台设备   │
-  │  STM32 + ESP-07S │
+  │  STM32 + 4G模块 │
   └─────────────────┘
 ```
 
@@ -72,7 +72,7 @@
 
 | 组件 | 职责 | 变化 |
 |---|---|---|
-| ESP-07S | OTA 模式不变；新增数据上报：UART 收帧 → CRC 校验 → MQTT publish | 加 data_forwarder |
+| 4G模块 | OTA 模式不变；新增数据上报：UART 收帧 → CRC 校验 → MQTT publish | 加 data_forwarder |
 | STM32 | OTA 不变；定时读传感器 → 构造 JSON → UART 发送 | 加 data_report + CMD_DATA_REPORT |
 | EMQX | MQTT 路由、设备认证 | 新增 data topic 路由 |
 | TDengine | 时序数据：遥测 + 事件 + 告警 + 自动降采样聚合；通过 taosX 原生 MQTT 订阅直接消费 EMQX 消息 | **新增组件** |
@@ -88,7 +88,7 @@
 STM32 读传感器                                   
   │                                               
   ▼                                               
-构造 JSON ──UART DMA──▶ ESP-07S ──MQTT──▶ EMQX ──▶ TDengine
+构造 JSON ──UART DMA──▶ 4G模块 ──MQTT──▶ EMQX ──▶ TDengine
                                                      │
                                                      ▼
                                           FastAPI 查询接口 ◀── Vue3 大盘
@@ -130,7 +130,7 @@ STM32 读传感器
 - `status = 'online'` — `last_seen` 在 **5 分钟**内
 - `status = 'offline'` — `last_seen` 超过 **5 分钟**
 
-> taosX 负责海量数据写入 TDengine，EMQX 规则引擎负责轻量的 `last_seen` 更新，各走各路互不干扰。阈值 5 分钟可配置，选 5 分钟而不是 5 秒是为了容忍 WiFi 瞬时断连，避免在线状态频繁抖动。
+> taosX 负责海量数据写入 TDengine，EMQX 规则引擎负责轻量的 `last_seen` 更新，各走各路互不干扰。阈值 5 分钟可配置，选 5 分钟而不是 5 秒是为了容忍 4G 瞬时断连，避免在线状态频繁抖动。
 
 ---
 
@@ -184,7 +184,7 @@ CREATE STABLE telemetry (
   di3        TINYINT,        -- 数字输入 3
   di4        TINYINT,        -- 数字输入 4
   -- 设备状态
-  rssi       INT,            -- WiFi 信号强度 (dBm)
+  rssi       INT,            -- 4G 信号强度 (dBm)
   uptime     BIGINT,         -- 设备运行秒数
   -- 扩展（冷门/临时字段，后续可 ALTER STABLE 提升为正式列）
   payload    NCHAR(1024)      -- 扩展字段 (JSON)
@@ -247,8 +247,8 @@ alerts: id, dev_id, rule_id, level, msg, triggered_at, resolved_at
 
 | 层 | 格式 | 说明 |
 |---|---|---|
-| STM32 → ESP-07S | `{"ts":1721712000,"t":25.3,"h":68.2,"p":101.3,"vi":220.1,"vo":12.05,"c":1.25,"po":1250.5,"e":38472.3,"f":50.01,"d1":1,"d2":0,"d3":1,"d4":0,"r":-58,"up":863400}` | 简短 key 节省 UART 带宽 |
-| ESP-07S → MQTT | 同上，透传 | 不做转换 |
+| STM32 → 4G模块 | `{"ts":1721712000,"t":25.3,"h":68.2,"p":101.3,"vi":220.1,"vo":12.05,"c":1.25,"po":1250.5,"e":38472.3,"f":50.01,"d1":1,"d2":0,"d3":1,"d4":0,"r":-58,"up":863400}` | 简短 key 节省 UART 带宽 |
+| 4G模块 → MQTT | 同上，透传 | 不做转换 |
 | FastAPI → 前端 | `{"ts":"2026-07-23T10:00:00","temperature":25.3,"humidity":68.2,"pressure":101.3,...}` | 完整 key，前端友好 |
 | 前端 → FastAPI | 标准 REST 参数 | `?dev_id=xxx&start=...&end=...` |
 
@@ -381,11 +381,11 @@ cmd/{dev_id}/config        → 云端下发配置（如修改上报间隔）
 
 ---
 
-## 8. STM32 / ESP-07S 数据上报
+## 8. STM32 / 4G模块 数据上报
 
 ### 8.1 总体原则
 
-STM32 只管采集 + 打包，ESP-07S 只管透明转发。ESP 不解析 JSON 内容，不缓存数据。
+STM32 只管采集 + 打包，4G模块 只管透明转发。ESP 不解析 JSON 内容，不缓存数据。
 
 ### 8.2 STM32 端流程
 
@@ -402,12 +402,12 @@ STM32 只管采集 + 打包，ESP-07S 只管透明转发。ESP 不解析 JSON �
 封装 UART 帧 (CMD=DATA_REPORT 0x10)
     │
     ▼
-UART DMA 发送 → ESP-07S
+UART DMA 发送 → 4G模块
 ```
 
 改动：`uart_protocol.c` 加 `CMD_DATA_REPORT (0x10)`，新建 `data_report.c`（~100 行），定时器回调调用。
 
-### 8.3 ESP-07S 端流程
+### 8.3 4G模块 端流程
 
 ```
 UART 收到帧 (CMD=0x10)
@@ -453,13 +453,13 @@ mqttClient.publish(topic, json)
 | STM32 | 传感器读取失败 | 对应字段填 null，不跳过上报 |
 | STM32 | UART 发送缓冲区满 | 丢本次数据，记录丢包计数 |
 | STM32 | 连续 N 次 ACK 超时 | 标记通信故障，触发事件上报 |
-| ESP-07S | WiFi 断连 | 不缓存，丢就丢了 |
-| ESP-07S | MQTT publish 失败 | 重试 1 次，仍失败则丢弃 |
-| ESP-07S | CRC16 校验失败 | 直接丢弃，不 ACK |
+| 4G模块 | 4G 断连 | 不缓存，丢就丢了 |
+| 4G模块 | MQTT publish 失败 | 重试 1 次，仍失败则丢弃 |
+| 4G模块 | CRC16 校验失败 | 直接丢弃，不 ACK |
 
-### 8.7 关键设计决策：ESP-07S 不缓存数据
+### 8.7 关键设计决策：4G模块 不缓存数据
 
-与 OTA 项目中"ESP-07S 不缓存固件"原则一致。时序数据特点是"丢了就丢了，下一条马上来"，不像固件必须完整。不缓存方案代码简单、内存占用低、断电行为一致。
+与 OTA 项目中"4G模块 不缓存固件"原则一致。时序数据特点是"丢了就丢了，下一条马上来"，不像固件必须完整。不缓存方案代码简单、内存占用低、断电行为一致。
 
 ---
 
@@ -502,7 +502,7 @@ D:\claude\514\
 │       ├── ota_task.c         (已有)
 │       ├── data_report.c      (新增)
 │       └── uart_protocol.c    (扩展：加 CMD_DATA_REPORT)
-├── esp07s/                    (扩展)
+├── 4g_module/                    (扩展)
 │   └── src/
 │       ├── data_forwarder.cpp (新增)
 │       └── uart_transport.cpp (扩展)
@@ -568,8 +568,8 @@ D:\claude\514\
 
 | 层 | 方法 | 工具 |
 |---|---|---|
-| STM32 data_report | PC 串口工具模拟 ESP-07S，验证帧格式 + JSON + CRC | 串口助手 + Python 脚本 |
-| ESP-07S data_forwarder | PC 起 MQTT broker + 串口发帧，验证 publish | Mosquitto + 串口工具 |
+| STM32 data_report | PC 串口工具模拟 4G模块，验证帧格式 + JSON + CRC | 串口助手 + Python 脚本 |
+| 4G模块 data_forwarder | PC 起 MQTT broker + 串口发帧，验证 publish | Mosquitto + 串口工具 |
 | 后端 telemetry API | 单元测试 + httpx 集成测试，预灌数据查接口 | pytest |
 | EMQX → TDengine | 用 MQTT 客户端模拟 1000 设备并发上报，验证写入 | paho-mqtt + 压力脚本 |
 | 前端 | Vitest 组件测试 + Playwright E2E | Vitest / Playwright |
@@ -583,7 +583,7 @@ D:\claude\514\
 Phase 1: TDengine 部署 + EMQX 桥接       → 数据能进来
 Phase 2: FastAPI 时序查询 API            → 数据能出来
 Phase 3: 前端监控大盘 MVP                 → 数据能看
-Phase 4: STM32 + ESP-07S 数据上报适配     → 真实设备对接
+Phase 4: STM32 + 4G模块 数据上报适配     → 真实设备对接
 Phase 5: 告警规则引擎 + 告警中心           → 智能化
 Phase 6: 前端设备详情 + 历史曲线           → 完整体验
 Phase 7: 企业级能力（灰度/导出/批量操作）    → 运营能力
@@ -598,7 +598,7 @@ Phase 7: 企业级能力（灰度/导出/批量操作）    → 运营能力
 | 时序存储 | TDengine，不用 MySQL | 存储成本降低 14 倍，查询性能不退化 |
 | 数据分层 | 时序 → TDengine，元数据 → MySQL | 各用最合适的数据库 |
 | 扩展字段 | 宽表 + payload 兜底 | 查询性能 + 灵活性的平衡 |
-| ESP-07S 缓存 | 不缓存 | 时序数据丢包可接受，代码简单 |
+| 4G模块 缓存 | 不缓存 | 时序数据丢包可接受，代码简单 |
 | 上报协议 | 复用现有 UART 帧协议 + 新 CMD | 最小化协议层改动 |
 | 前端图表 | ECharts | 大数据量曲线性能好，dataZoom 缩放 |
 | MySQL 角色 | 保留，只存元数据 | 用户/设备/OTA 逻辑不变 |

@@ -1,4 +1,4 @@
-# STM32 + ESP-07S OTA 升级 & 数据采集系统 — 设计文档
+# STM32 + 4G模块 OTA 升级 & 数据采集系统 — 设计文档
 
 
 
@@ -32,9 +32,9 @@
 
 | 主控 MCU | STM32F103VE（裸机/RTOS，片内 flash 512KB，App 区 288KB，含 RTC + VBAT 后备） |
 
-| WiFi 模块 | ESP-07S (ESP8266)，**透明数据桥接**（UART ↔ MQTT/HTTP 双向转换，不做业务处理、不缓存数据） |
+| 4G 模块 | 4G模块，**透明数据桥接**（UART ↔ MQTT/HTTP 双向转换，不做业务处理、不缓存数据） |
 
-| 主控 ↔ WiFi | UART 连接（460800 或 921600 bps，DMA + 空闲中断） |
+| 主控 ↔ 4G | UART 连接（460800 或 921600 bps，DMA + 空闲中断） |
 
 | 云端 | 阿里云 ECS + RDS MySQL + OSS + EMQX |
 
@@ -56,7 +56,7 @@
 
 |---|---|---|
 
-| **OTA 固件升级** | 远程下发加密固件，ESP-07S 流式转发，STM32 Bootloader 安全升级，支持断点续传/回滚/灰度 | Part A（§2-13） |
+| **OTA 固件升级** | 远程下发加密固件，4G模块 流式转发，STM32 Bootloader 安全升级，支持断点续传/回滚/灰度 | Part A（§2-13） |
 
 | **数据采集平台** | 10,000 节点每 5 秒上报遥测数据（环境量+电气量+开关量），TDengine 时序存储，监控大盘+历史曲线+告警 | Part B（§14-26） |
 
@@ -92,7 +92,7 @@
 
 | STM32 — 参数区（`factory.bin` 内） | `dev_id`（uint32） | 产线分配，参数区 OTA 不擦除 |
 
-| ESP-07S flash | WiFi SSID/密码、MQTT broker 地址（DNS 域名）、`dev_id` | `secret` 不在产线烧录，由 STM32 首次上电后计算并下发 |
+| 4G 模块 flash | APN 配置、MQTT broker 地址（DNS 域名）、`dev_id` | `secret` 不在产线烧录，由 STM32 首次上电后计算并下发 |
 
 
 
@@ -116,7 +116,7 @@
 
     ④ 存 secret 到参数区（后续上电直接读取）
 
-    ⑤ UART → 发送 secret 给 ESP-07S
+    ⑤ UART → 发送 secret 给 4G模块
 
     ⑥ ESP 保存 secret → MQTT CONNECT → 上线
 
@@ -145,7 +145,7 @@
 > 服务器端用 `gen_device_secret.py` 预计算所有 `dev_id` 的 secret，认证时重算比对，不存每设备明文 secret。
 #### 本地配置接口
 
-WiFi SSID/密码、MQTT broker 地址、dev_id 等信息出厂时写入默认值（产线烧录），支持现场通过以下方式修改：
+APN 配置、MQTT broker 地址、dev_id 等信息出厂时写入默认值（产线烧录），支持现场通过以下方式修改：
 
 | 配置方式 | 接口 | 场景 |
 |---------|------|------|
@@ -161,15 +161,15 @@ WiFi SSID/密码、MQTT broker 地址、dev_id 等信息出厂时写入默认值
 
   进入配置模式:
     调试串口: 上电时检测特定引脚电平 或 收到配置指令
-        -> CLI 交互: set wifi_ssid xxx / set mqtt_host xxx / save / reboot
+        -> CLI 交互: set apn xxx / set mqtt_host xxx / save / reboot
     HMI: 系统菜单 -> 网络设置 / 设备设置 -> 修改 -> 保存 -> 重启
 
 配置项列表：
 
 | 配置项 | 默认值来源 | 可修改 | 说明 |
 |--------|-----------|--------|------|
-| wifi_ssid | 产线烧录 | 是 | WiFi AP 名称 |
-| wifi_password | 产线烧录 | 是 | WiFi 密码 |
+| apn | 产线烧录 | 是 4G 接入点名称 (如 cmnet) |
+| sim_pin | 产线烧录 | 是 SIM 卡 PIN 码 (可选) |
 | mqtt_host | 产线烧录 | 是 | MQTT broker DNS 域名 |
 | mqtt_port | 编译期 (8883) | 是 | MQTT TLS 端口 |
 | dev_id | 产线烧录 | 否 (出厂后锁定) | 设备唯一标识 |
@@ -178,7 +178,7 @@ WiFi SSID/密码、MQTT broker 地址、dev_id 等信息出厂时写入默认值
 
 #### 本地配置接口
 
-WiFi SSID/密码、MQTT broker 地址、 等信息出厂时写入**默认值**（产线烧录），支持现场通过以下方式修改：
+APN 配置、MQTT broker 地址、 等信息出厂时写入**默认值**（产线烧录），支持现场通过以下方式修改：
 
 | 配置方式 | 接口 | 场景 |
 |---------|------|------|
@@ -194,8 +194,8 @@ WiFi SSID/密码、MQTT broker 地址、 等信息出厂时写入**默认值**�
 
 | 配置项 | 默认值来源 | 可修改 | 说明 |
 |--------|-----------|--------|------|
-|  | 产线烧录 | 是 | WiFi AP 名称 |
-|  | 产线烧录 | 是 | WiFi 密码 |
+|  | 产线烧录 | 是 4G 接入点名称 (如 cmnet) |
+|  | 产线烧录 | 是 SIM 卡 PIN 码 (可选) |
 |  | 产线烧录 | 是 | MQTT broker DNS 域名 |
 |  | 编译期 () | 是 | MQTT TLS 端口 |
 |  | 产线烧录 | **否** (出厂后锁定) | 设备唯一标识 |
@@ -247,7 +247,7 @@ WiFi SSID/密码、MQTT broker 地址、 等信息出厂时写入**默认值**�
 
                                             ┌────────────┴──────────┐
 
-                                            │  ESP-07S (透明桥接)    │
+                                            │  4G模块 (透明桥接)    │
 
                                             │   ↓ HTTP 流 → UART 流  │
 
@@ -267,7 +267,7 @@ WiFi SSID/密码、MQTT broker 地址、 等信息出厂时写入**默认值**�
 
 
 
-1. **ESP-07S 流式转发**（不缓存完整固件）：HTTP 流 → UART 流，纯管道模式
+1. **4G模块 流式转发**（不缓存完整固件）：HTTP 流 → UART 流，纯管道模式
 
 2. **STM32 App 在线接收**：运行时流式写片外 SPI flash，业务中断时间最短
 
@@ -287,7 +287,7 @@ WiFi SSID/密码、MQTT broker 地址、 等信息出厂时写入**默认值**�
 
 [阶段1: App 在线接收固件]
 
-服务器 ──HTTPS 流──> ESP-07S ──UART 流──> STM32 App ──SPI──> 片外 flash
+服务器 ──HTTPS 流──> 4G模块 ──UART 流──> STM32 App ──SPI──> 片外 flash
 
                                                               ↓
 
@@ -301,7 +301,7 @@ WiFi SSID/密码、MQTT broker 地址、 等信息出厂时写入**默认值**�
 
 [阶段2: 触发升级]
 
-ESP-07S 发"立即升级" -> App 写标志 -> 软复位（不做备份，备份由 Bootloader 负责）
+4G模块 发"立即升级" -> App 写标志 -> 软复位（不做备份，备份由 Bootloader 负责）
 
 
 
@@ -313,7 +313,7 @@ Bootloader 读标志 -> 先校验新固件 HMAC（verify-before-write，失败�
 
 [阶段4: 启动确认]
 
-新 App 写"app_healthy" -> 通过 ESP-07S 上报结果
+新 App 写"app_healthy" -> 通过 4G模块 上报结果
 
 未 healthy 超时 -> Bootloader 下次上电从备份区回滚
 
@@ -355,7 +355,7 @@ Bootloader 读标志 -> 先校验新固件 HMAC（verify-before-write，失败�
 
 | `mcu_version` | VARCHAR(32) | STM32 固件版本 |
 
-| `esp_version` | VARCHAR(32) | ESP-07S 固件版本（预留） |
+| `esp_version` | VARCHAR(32) | 4G模块 固件版本（预留） |
 
 | `bootloader_version` | VARCHAR(32) | Bootloader 版本（只读） |
 
@@ -559,11 +559,11 @@ POST   /api/v1/device/ota/report      # 上报升级结果
 
 
 
-> **心跳主路径是 MQTT，不是 HTTP**：STM32 每 60s 经 UART CMD 0x0A 发心跳 → ESP-07S publish 到 `device/heartbeat/{dev_id}`（§5）→ EMQX 规则引擎更新 `devices.last_seen`（§15.3）。`POST /api/v1/device/heartbeat` 仅作 MQTT 长时间不可用时的 HTTP 兜底上报，两者更新的是同一个 `last_seen` 字段，不重复计时。
+> **心跳主路径是 MQTT，不是 HTTP**：STM32 每 60s 经 UART CMD 0x0A 发心跳 → 4G模块 publish 到 `device/heartbeat/{dev_id}`（§5）→ EMQX 规则引擎更新 `devices.last_seen`（§15.3）。`POST /api/v1/device/heartbeat` 仅作 MQTT 长时间不可用时的 HTTP 兜底上报，两者更新的是同一个 `last_seen` 字段，不重复计时。
 
 
 
-> **固件下载（直连 OSS）**：固件字节流**不经过 FastAPI**。后端生成 OSS 限时签名 URL（5min 过期，期内可多次 Range 请求）随 MQTT 下发（或在 `/ota/check` 返回），ESP-07S 直接从 OSS 拉流，OSS 原生支持 Range 断点续传。FastAPI 不经手固件内容，仅负责签发 URL 与接收结果上报，避免万级并发下载压垮单台 ECS。（注：此处"直连 OSS"是下载路径决策，与 §7.1 的"方案 A"blob 存储约定是两件独立的事。）
+> **固件下载（直连 OSS）**：固件字节流**不经过 FastAPI**。后端生成 OSS 限时签名 URL（5min 过期，期内可多次 Range 请求）随 MQTT 下发（或在 `/ota/check` 返回），4G模块 直接从 OSS 拉流，OSS 原生支持 Range 断点续传。FastAPI 不经手固件内容，仅负责签发 URL 与接收结果上报，避免万级并发下载压垮单台 ECS。（注：此处"直连 OSS"是下载路径决策，与 §7.1 的"方案 A"blob 存储约定是两件独立的事。）
 
 
 
@@ -591,7 +591,7 @@ POST   /api/v1/device/ota/report      # 上报升级结果
 
 1. **产线预置**：`dev_id`（uint32）与 `secret` 在出厂时同时烧录到 STM32 flash 并录入服务端 `devices` 表（`dev_id` + `secret_hash`）。`secret` 可由服务端主设备密钥按 `HMAC-SHA256(master_device_key, dev_id)` 派生，这样服务端不存每设备明文 secret，验证时重算比对即可。
 
-2. **ESP-07S 连接 MQTT**：username = `dev_id` 十进制串，password = `secret` 的 hex 字符串。
+2. **4G模块 连接 MQTT**：username = `dev_id` 十进制串，password = `secret` 的 hex 字符串。
 
 3. **EMQX auth 钩子**：收到 CONNECT 后，查 `devices` 表（或计算派生 secret）验证 username/password。通过则允许连接。
 
@@ -687,7 +687,7 @@ POST   /api/v1/device/ota/report      # 上报升级结果
 
 |---|---|---|
 
-| `net_config` | 网络配置 | `{"wifi_ssid":"shop-a","mqtt_host":"mqtt.example.com","mqtt_port":8883}` |
+| `net_config` | 网络配置 | `{"apn":"cmnet","mqtt_host":"mqtt.example.com","mqtt_port":8883}` |
 
 | `report_config` | 上报配置 | `{"report_interval_ms":5000,"sample_period_ms":1000,"sensors":"temp,hum,volt_in"}` |
 
@@ -761,7 +761,7 @@ device/config/resp/{dev_id}     # 配置读取应答（设备→云），data < 
 
 
 
-> **OTA 进度回传**：下载/升级过程中，ESP-07S 周期性（如每收 N 个块或每秒，取较疏者）publish `device/ota/progress/{dev_id}`，携带 `task_id + state + download_offset + progress`。云端（FastAPI 订阅或 EMQX 规则引擎）据此更新 `ota_task_records` 的 `download_offset/progress/status`，驱动 §6 实时进度看板。`download_offset` 由 ESP 从 HTTP 下载进度取得（STM32 写入进度经 CMD 0x06 ACK 的 offset 回传）。最终成败经 `device/ota/result`（对应 CMD 0x09）上报。
+> **OTA 进度回传**：下载/升级过程中，4G模块 周期性（如每收 N 个块或每秒，取较疏者）publish `device/ota/progress/{dev_id}`，携带 `task_id + state + download_offset + progress`。云端（FastAPI 订阅或 EMQX 规则引擎）据此更新 `ota_task_records` 的 `download_offset/progress/status`，驱动 §6 实时进度看板。`download_offset` 由 ESP 从 HTTP 下载进度取得（STM32 写入进度经 CMD 0x06 ACK 的 offset 回传）。最终成败经 `device/ota/result`（对应 CMD 0x09）上报。
 
 
 
@@ -1613,7 +1613,7 @@ App 每次启动:
 
 
 
-## 8. ESP-07S 端设计（流式转发）
+## 8. 4G模块 端设计（流式转发）
 
 
 
@@ -1621,13 +1621,13 @@ App 每次启动:
 
 
 
-ESP-07S 上电后按以下顺序初始化（任何一步失败则重试，重试间隔递增，最大 60s）：
+4G模块 上电后按以下顺序初始化（任何一步失败则重试，重试间隔递增，最大 60s）：
 
 
 
 ```
 
-1. 连接 WiFi（SSID/密码**产线烧录**到 ESP flash，与 dev_id+secret 同一批次预置）
+1. 拨号连接 4G（SSID/密码**产线烧录**到 ESP flash，与 dev_id+secret 同一批次预置）
 
 2. 连接 MQTT broker（地址/端口**产线烧录**到 ESP flash 中的 DNS 域名，如 mqtt.example.com:8883）
 
@@ -1643,7 +1643,7 @@ ESP-07S 上电后按以下顺序初始化（任何一步失败则重试，重试
 
 
 
-> WiFi 断线时 ESP 自动重连 MQTT，重连成功后重新订阅并发布心跳。WiFi/MQTT 重连期间，STM32 持续发来 CMD 0x0A 心跳/0x10 数据帧——ESP UART 收帧缓冲暂存（若不缓存则丢弃，见 §20.5 错误处理）并继续尝试重连。
+> 4G 断线时 ESP 自动重连 MQTT，重连成功后重新订阅并发布心跳。4G/MQTT 重连期间，STM32 持续发来 CMD 0x0A 心跳/0x10 数据帧——ESP UART 收帧缓冲暂存（若不缓存则丢弃，见 §20.5 错误处理）并继续尝试重连。
 
 
 
@@ -1651,7 +1651,7 @@ ESP-07S 上电后按以下顺序初始化（任何一步失败则重试，重试
 
 
 
-ESP-07S 是纯管道，HTTP 流进来一块就 UART 转一块，不在本地缓存：
+4G模块 是纯管道，HTTP 流进来一块就 UART 转一块，不在本地缓存：
 
 
 
@@ -1659,7 +1659,7 @@ ESP-07S 是纯管道，HTTP 流进来一块就 UART 转一块，不在本地缓�
 
 HTTPClient http;
 
-WiFiClient *stream = http.getStreamPtr();
+/* 4G TCP client */ *stream = http.getStreamPtr();
 
 int offset = 0;
 
@@ -1703,11 +1703,11 @@ while (offset < total_size) {
 
 **断点续传**（三偏移相等，零换算）：
 
-- 网络中断后 ESP-07S 重连，UART 发 CMD 0x01 查询 STM32 已收 offset
+- 网络中断后 4G模块 重连，UART 发 CMD 0x01 查询 STM32 已收 offset
 
 - STM32 返回固件头里的 `receive_offset`（= 固件区已写 blob 字节数）
 
-- ESP-07S 用 `Range: bytes=receive_offset-` 重新发 HTTP 请求（即固件区写入偏移 = HTTP 下载偏移 = receive_offset）
+- 4G模块 用 `Range: bytes=receive_offset-` 重新发 HTTP 请求（即固件区写入偏移 = HTTP 下载偏移 = receive_offset）
 
 - OSS 原生支持 Range
 
@@ -1719,13 +1719,13 @@ while (offset < total_size) {
 
 - HTTP 下载速度（几百 KB/s）> UART 转发速度（~80KB/s @921600）
 
-- ESP-07S 读完一块**主动暂停读** HTTP stream，等 UART ACK 后再读下一块
+- 4G模块 读完一块**主动暂停读** HTTP stream，等 UART ACK 后再读下一块
 
 - TCP 接收缓冲区会自然 backpressure，不会丢数据
 
 
 
-**进度上报**：下载过程中 ESP-07S 周期性 publish `device/ota/progress/{dev_id}`（task_id + 当前 offset + progress），供云端刷新 `ota_task_records` 与进度看板（§5）。
+**进度上报**：下载过程中 4G模块 周期性 publish `device/ota/progress/{dev_id}`（task_id + 当前 offset + progress），供云端刷新 `ota_task_records` 与进度看板（§5）。
 
 
 
@@ -1733,7 +1733,7 @@ while (offset < total_size) {
 
 
 
-## 9. 通信协议（ESP-07S ↔ STM32）
+## 9. 通信协议（4G模块 ↔ STM32）
 
 
 
@@ -1857,13 +1857,13 @@ OTA 块传输（0x05/0x06）、数据上报（0x10/0x11）、心跳（0x0A）、
 
 | App 接收时片外 flash 写失败 | 块级 ACK + 重传 3 次；3 次失败整任务标记 failed |
 
-| HTTP 中断 | ESP-07S 用 Range 续传，从 STM32 查 `receive_offset` |
+| HTTP 中断 | 4G模块 用 Range 续传，从 STM32 查 `receive_offset` |
 
 | 升级中途断电 | 状态机 + 备份区：UPGRADE_REQUESTED 状态断电后 Bootloader 自动完成或回滚 |
 
 | App 收固件时主业务阻塞 | UART DMA + 空闲中断异步收；片外 flash 写入用低优先级任务 |
 
-| UART 流控溢出 | ESP-07S 读一块等 ACK 再读下一块，TCP 自然 backpressure |
+| UART 流控溢出 | 4G模块 读一块等 ACK 再读下一块，TCP 自然 backpressure |
 
 | 新 App 启动失败 | Bootloader 30s 内未收到 `app_healthy` 则从备份区回滚 |
 
@@ -1873,13 +1873,13 @@ OTA 块传输（0x05/0x06）、数据上报（0x10/0x11）、心跳（0x0A）、
 
 | UART 误码 | 每块 CRC16 + ACK + 重传 3 次；建议加硬件流控 RTS/CTS |
 
-| ESP-07S 与 STM32 复位时序 | ESP-07S 通过 GPIO 控制 STM32 RESET，避免 UART 丢字节 |
+| 4G模块 与 STM32 复位时序 | 4G模块 通过 GPIO 控制 STM32 RESET，避免 UART 丢字节 |
 
 | 主密钥泄露 | 所有设备固件可解密；启用 STM32 RDP Level 1 读保护，SWD 不可读 flash |
 
 | 固件加密性能 | STM32F103VE 软件 AES-256 ~50-80 KB/s，~288KB 加解密 3-5s，可接受 |
 
-| 时序数据丢失 | 时序数据对少量丢包不敏感（下一条 5s 后就来）；ESP 不缓存，WiFi 断连丢几秒数据可接受 |
+| 时序数据丢失 | 时序数据对少量丢包不敏感（下一条 5s 后就来）；ESP 不缓存，4G 断连丢几秒数据可接受 |
 
 | TDengine 存储增长 | KEEP 自动清理 + 降采样；监控磁盘使用率，接近 80% 扩容或缩短保留期 |
 
@@ -1935,7 +1935,7 @@ OTA 块传输（0x05/0x06）、数据上报（0x10/0x11）、心跳（0x0A）、
 
 | STM32 App OTA 模块 | 3-4 天 | UART 协议 + 片外 flash + 状态机 |
 
-| ESP-07S 端 | 2-3 天 | 纯流式转发，不缓存 |
+| 4G模块 端 | 2-3 天 | 纯流式转发，不缓存 |
 
 | 后端 FastAPI (OTA) | 4-5 天 | 固件/设备/任务/下载/上报 + MQTT publisher + 加密下发 |
 
@@ -1963,7 +1963,7 @@ OTA 块传输（0x05/0x06）、数据上报（0x10/0x11）、心跳（0x0A）、
 
 | STM32 data_report | 0.5-1 天 | 传感器采集 + JSON 打包 + UART 帧封装 |
 
-| ESP-07S data_forwarder | 0.5 天 | UART 收帧 → MQTT publish |
+| 4G模块 data_forwarder | 0.5 天 | UART 收帧 → MQTT publish |
 
 | 联调 + 压力测试 | 1-2 天 | |
 
@@ -2021,7 +2021,7 @@ ECS 配置建议：**4C8G** 起步（EMQX + TDengine + FastAPI + Nginx 同机）
 
 2. **STM32 App OTA 模块骨架** — UART DMA 收帧 + 片外 flash 读写 + 状态机
 
-3. **ESP-07S 流式转发骨架** — MQTT 订阅 + HTTP stream → UART 帧分块发送 + 断点续传
+3. **4G模块 流式转发骨架** — MQTT 订阅 + HTTP stream → UART 帧分块发送 + 断点续传
 
 4. **FastAPI 后端 MVP 骨架** — 核心数据模型 + API + MQTT publisher
 
@@ -2041,7 +2041,7 @@ ECS 配置建议：**4C8G** 起步（EMQX + TDengine + FastAPI + Nginx 同机）
 
 9. **STM32 data_report 模块** — 传感器采集 + JSON 打包 + UART CMD 0x10
 
-10. **ESP-07S data_forwarder 模块** — UART 收帧 → MQTT publish + ACK
+10. **4G模块 data_forwarder 模块** — UART 收帧 → MQTT publish + ACK
 
 
 
@@ -2065,7 +2065,7 @@ ECS 配置建议：**4C8G** 起步（EMQX + TDengine + FastAPI + Nginx 同机）
 
 
 
-在已有 OTA 基础设施上叠加数据采集上报能力。10,000 台 STM32 + ESP-07S 设备定时上报遥测数据（传感器读数、电气参数、开关量），云端存储、查询、展示。
+在已有 OTA 基础设施上叠加数据采集上报能力。10,000 台 STM32 + 4G模块 设备定时上报遥测数据（传感器读数、电气参数、开关量），云端存储、查询、展示。
 
 
 
@@ -2077,7 +2077,7 @@ ECS 配置建议：**4C8G** 起步（EMQX + TDengine + FastAPI + Nginx 同机）
 
 |---|---|
 
-| 节点数 | 10,000 台 STM32 + ESP-07S |
+| 节点数 | 10,000 台 STM32 + 4G模块 |
 
 | 上报频率 | 每 5 秒 |
 
@@ -2101,7 +2101,7 @@ ECS 配置建议：**4C8G** 起步（EMQX + TDengine + FastAPI + Nginx 同机）
 
 - 复用现有云基础设施（ECS / RDS MySQL / EMQX / OSS）
 
-- 复用 STM32 + ESP-07S 硬件和 UART 帧协议（新增 `CMD_DATA_REPORT` 命令）
+- 复用 STM32 + 4G模块 硬件和 UART 帧协议（新增 `CMD_DATA_REPORT` 命令）
 
 - 复用 FastAPI + Vue3 + Element Plus 技术栈
 
@@ -2173,7 +2173,7 @@ ECS 配置建议：**4C8G** 起步（EMQX + TDengine + FastAPI + Nginx 同机）
 
   │  10,000 台设备   │
 
-  │  STM32 + ESP-07S │
+  │  STM32 + 4G模块 │
 
   └─────────────────┘
 
@@ -2189,7 +2189,7 @@ ECS 配置建议：**4C8G** 起步（EMQX + TDengine + FastAPI + Nginx 同机）
 
 |---|---|---|
 
-| ESP-07S | OTA 不变；新增数据上报：UART 收帧 → CRC 校验 → MQTT publish | 加 data_forwarder |
+| 4G模块 | OTA 不变；新增数据上报：UART 收帧 → CRC 校验 → MQTT publish | 加 data_forwarder |
 
 | STM32 | OTA 不变；定时读传感器 → 构造 JSON → UART 发送 | 加 data_report |
 
@@ -2355,7 +2355,7 @@ CREATE STABLE telemetry (
 
   -- 设备状态
 
-  rssi       INT,            -- WiFi 信号强度 (dBm)
+  rssi       INT,            -- 4G 信号强度 (dBm)
 
   uptime     BIGINT,         -- 设备运行秒数
 
@@ -2499,9 +2499,9 @@ alerts: id, dev_id, rule_id, level, msg, triggered_at, resolved_at
 
 |---|---|---|
 
-| STM32 → ESP-07S | `{"ts":1721712000,"temp":25.3,"hum":68.2,"pressure":101.3,"volt_in":220.1,...}` | JSON key = TDengine 列名 |
+| STM32 → 4G模块 | `{"ts":1721712000,"temp":25.3,"hum":68.2,"pressure":101.3,"volt_in":220.1,...}` | JSON key = TDengine 列名 |
 
-| ESP-07S → MQTT | 同上，透传 | 不解析、不转换 |
+| 4G模块 → MQTT | 同上，透传 | 不解析、不转换 |
 
 | taosX → TDengine | JSON key 与列名一一对应；TAG `dev_id` 从 MQTT topic `data/{dev_id}/telemetry` 自动提取 | 列：零映射；TAG：topic 提取 |
 
@@ -2543,7 +2543,7 @@ alerts: id, dev_id, rule_id, level, msg, triggered_at, resolved_at
 
 | `di1`~`di4` | 数字输入 | 0/1 |
 
-| `rssi` | WiFi 信号 | dBm |
+| `rssi` | 4G 信号 | dBm |
 
 | `uptime` | 运行时间 | s |
 
@@ -2663,7 +2663,7 @@ cmd/{dev_id}/config        → 云端下发配置（如修改上报间隔）
 
 
 
-## 20. 数据采集 — STM32 / ESP-07S
+## 20. 数据采集 — STM32 / 4G模块
 
 
 
@@ -2671,7 +2671,7 @@ cmd/{dev_id}/config        → 云端下发配置（如修改上报间隔）
 
 
 
-STM32 只管采集 + 打包，ESP-07S 只管透明转发。ESP 不解析 JSON 内容，不缓存数据。与 OTA 的"ESP 不缓存固件"哲学一致。
+STM32 只管采集 + 打包，4G模块 只管透明转发。ESP 不解析 JSON 内容，不缓存数据。与 OTA 的"ESP 不缓存固件"哲学一致。
 
 
 
@@ -2695,13 +2695,13 @@ STM32 只管采集 + 打包，ESP-07S 只管透明转发。ESP 不解析 JSON �
 
 - `ts` 取自 STM32 片内 RTC（LSE 32.768kHz 晶振 + VBAT 后备电池保持走时，掉电不丢时间）。
 
-- RTC 需**初始校时 + 定期同步**，否则时间戳漂移、数据落错时间点。校时路径：ESP-07S 有 WiFi，联网后取 NTP 时间，经 CMD 0x12 配置下发 `{"rtc_sync": <unix_ts>}` 给 STM32 设置 RTC。
+- RTC 需**初始校时 + 定期同步**，否则时间戳漂移、数据落错时间点。校时路径：4G模块 有 4G，联网后取 NTP 时间，经 CMD 0x12 配置下发 `{"rtc_sync": <unix_ts>}` 给 STM32 设置 RTC。
 
 - 建议：开机联网后校一次，之后每天校一次；若 RTC 未校时（`ts` 接近 0），taosX 可配置用服务器接收时间兜底。
 
 
 
-### 20.3 ESP-07S 端
+### 20.3 4G模块 端
 
 
 
@@ -2715,7 +2715,7 @@ UART 收帧 → 校验 CRC16 → 从帧头读 dev_id(4B) → 提取 JSON
 
 
 
-> ESP-07S **持有产线烧录的 dev_id + secret 副本**（供 MQTT CONNECT 认证和 topic 拼接使用），但不独立产生/管理身份：身份的**权威持有者是 STM32**（每帧 UART header 带的 dev_id 才是规范的），两者产线同批烧录，应一致。ESP 转发时从帧头读 dev_id 拼 MQTT topic，JSON 内容不解析、原样透传。
+> 4G模块 **持有产线烧录的 dev_id + secret 副本**（供 MQTT CONNECT 认证和 topic 拼接使用），但不独立产生/管理身份：身份的**权威持有者是 STM32**（每帧 UART header 带的 dev_id 才是规范的），两者产线同批烧录，应一致。ESP 转发时从帧头读 dev_id 拼 MQTT topic，JSON 内容不解析、原样透传。
 
 
 
@@ -2753,11 +2753,11 @@ UART 收帧 → 校验 CRC16 → 从帧头读 dev_id(4B) → 提取 JSON
 
 | STM32 | 连续 N 次 ACK 超时 | 标记通信故障，上报事件 |
 
-| ESP-07S | WiFi 断连 | 不缓存，丢就丢了 |
+| 4G模块 | 4G 断连 | 不缓存，丢就丢了 |
 
-| ESP-07S | MQTT publish 失败 | 重试 1 次，仍失败则丢弃 |
+| 4G模块 | MQTT publish 失败 | 重试 1 次，仍失败则丢弃 |
 
-| ESP-07S | CRC16 校验失败 | 直接丢弃，不 ACK |
+| 4G模块 | CRC16 校验失败 | 直接丢弃，不 ACK |
 
 
 
@@ -2965,7 +2965,7 @@ D:\claude\514\
 
 │       └── uart_protocol.c    (扩展)
 
-├── esp07s/                    (扩展)
+├── 4g_module/                    (扩展)
 
 │   └── src/
 
@@ -3055,9 +3055,9 @@ D:\claude\514\
 
 |---|---|---|
 
-| STM32 data_report | PC 串口工具模拟 ESP-07S，验证帧格式 + JSON + CRC | 串口助手 + Python |
+| STM32 data_report | PC 串口工具模拟 4G模块，验证帧格式 + JSON + CRC | 串口助手 + Python |
 
-| ESP-07S data_forwarder | PC 起 MQTT broker + 串口发帧，验证 publish | Mosquitto |
+| 4G模块 data_forwarder | PC 起 MQTT broker + 串口发帧，验证 publish | Mosquitto |
 
 | 后端 telemetry API | 单元测试 + httpx 集成测试 | pytest |
 
@@ -3083,7 +3083,7 @@ Phase 1: STM32 Bootloader                → OTA 核心
 
 Phase 2: STM32 App OTA 模块              → OTA 链路
 
-Phase 3: ESP-07S 流式转发                → OTA 链路
+Phase 3: 4G模块 流式转发                → OTA 链路
 
 Phase 4: 后端 MVP (FastAPI + MySQL)       → OTA 云端
 
@@ -3095,7 +3095,7 @@ Phase 7: FastAPI 时序查询 API             → 数据能出来
 
 Phase 8: 前端监控大盘 MVP                 → 数据能看
 
-Phase 9: STM32 + ESP-07S 数据上报适配     → 真实设备对接
+Phase 9: STM32 + 4G模块 数据上报适配     → 真实设备对接
 
 Phase 10: 告警规则引擎 + 告警中心          → 智能化
 
@@ -3125,7 +3125,7 @@ Phase 13: 企业级能力（分组/批次/灰度/导出） → 运营能力
 
 | 遥测 JSON key | 直接用 TDengine 列名（temp/hum/...），不用短 key | UART 点对点非瓶颈，列名换来 taosX 零映射直入 |
 
-| 固件下载路径 | ESP-07S 直连 OSS 签名 URL，不经 FastAPI | OSS 扛并发带宽 + 原生 Range，避免压垮单台 ECS |
+| 固件下载路径 | 4G模块 直连 OSS 签名 URL，不经 FastAPI | OSS 扛并发带宽 + 原生 Range，避免压垮单台 ECS |
 
 | 固件加密粒度 | 每版本发布时加密一次，blob 按版本复用 | 与 firmwares 表结构一致；CTR 下同明文复用 IV 安全 |
 
@@ -3133,7 +3133,7 @@ Phase 13: 企业级能力（分组/批次/灰度/导出） → 运营能力
 
 | 数据分层 | 时序 → TDengine，元数据 → MySQL | 各用最合适的数据库 |
 
-| ESP-07S 角色 | 纯管道，不缓存固件也不缓存数据 | 代码简单，内存低，断电一致 |
+| 4G模块 角色 | 纯管道，不缓存固件也不缓存数据 | 代码简单，内存低，断电一致 |
 
 | 扩展字段 | 宽表 + payload 兜底 | 查询性能 + 灵活性平衡 |
 
