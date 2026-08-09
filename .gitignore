@@ -50,3 +50,4 @@ JLinkLog.txt
 # === OS ===
 Thumbs.db
 Desktop.ini
+tools/.merge_tool_config.json
