@@ -12,6 +12,8 @@
 
 #include <includes.h>
 #include "uid_verify.h"
+#include "sd_storage.h"
+#include "rtc.h"
 
 
 /*
@@ -31,6 +33,7 @@
 
 OS_TCB   AppTaskStartTCB;
 OS_TCB   AppTaskBlinkTCB;
+OS_TCB   AppTaskSDStorageTCB;
 
 
 /*
@@ -41,6 +44,7 @@ OS_TCB   AppTaskBlinkTCB;
 
 __align(8) static  CPU_STK  AppTaskStartStk[APP_TASK_START_STK_SIZE];
 __align(8) static  CPU_STK  AppTaskBlinkStk[APP_TASK_BLINK_STK_SIZE];
+__align(8) static  CPU_STK  AppTaskSDStorageStk[APP_TASK_SD_STORAGE_STK_SIZE];
 
 
 /*
@@ -64,6 +68,8 @@ int  main (void)
     OS_ERR  err;
 
     uid_verify();  /* 设备防克隆验证 —— 必须在所有初始化之前 (设计文档 §7.5) */
+
+    rtc_init();    /* RTC init -- LSE + backup domain */
 
     OSInit(&err);
 
@@ -91,6 +97,21 @@ int  main (void)
                  (CPU_STK    *)&AppTaskBlinkStk[0],
                  (CPU_STK_SIZE) APP_TASK_BLINK_STK_SIZE / 10,
                  (CPU_STK_SIZE) APP_TASK_BLINK_STK_SIZE,
+                 (OS_MSG_QTY  ) 0u,
+                 (OS_TICK     ) 0u,
+                 (void       *) 0,
+                 (OS_OPT      )(OS_OPT_TASK_STK_CHK | OS_OPT_TASK_STK_CLR),
+                 (OS_ERR     *)&err);
+
+    /* SD 卡本地数据存储任务                                                      */
+    OSTaskCreate((OS_TCB     *)&AppTaskSDStorageTCB,
+                 (CPU_CHAR   *)"SD Storage",
+                 (OS_TASK_PTR ) sd_storage_task,
+                 (void       *) 0,
+                 (OS_PRIO     ) APP_TASK_SD_STORAGE_PRIO,
+                 (CPU_STK    *)&AppTaskSDStorageStk[0],
+                 (CPU_STK_SIZE) APP_TASK_SD_STORAGE_STK_SIZE / 10,
+                 (CPU_STK_SIZE) APP_TASK_SD_STORAGE_STK_SIZE,
                  (OS_MSG_QTY  ) 0u,
                  (OS_TICK     ) 0u,
                  (void       *) 0,

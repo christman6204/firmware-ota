@@ -37,6 +37,7 @@
 /* 以下为后续 OTA/数据采集任务预留优先级（暂未创建）*/
 #define  APP_TASK_OTA_PRIO                          12      /* OTA 任务（较高优先级，升级期间抢占）       */
 #define  APP_TASK_DATA_REPORT_PRIO                  14      /* 数据采集上报任务                          */
+#define  APP_TASK_SD_STORAGE_PRIO                   16      /* SD 卡本地存储任务                         */
 #define  APP_TASK_MONITOR_PRIO                      18      /* 实时监控响应任务                          */
 
 
@@ -53,6 +54,7 @@
 /* 以下为后续任务预留栈（暂未使用）*/
 #define  APP_TASK_OTA_STK_SIZE                      512     /* OTA 任务栈 2KB（AES/HMAC 缓冲较大）        */
 #define  APP_TASK_DATA_REPORT_STK_SIZE              384     /* 数据上报任务栈 1.5KB                      */
+#define  APP_TASK_SD_STORAGE_STK_SIZE               384     /* SD 存储任务栈 1.5KB (FatFs 操作)           */
 #define  APP_TASK_MONITOR_STK_SIZE                  384     /* 监控响应任务栈 1.5KB                      */
 
 

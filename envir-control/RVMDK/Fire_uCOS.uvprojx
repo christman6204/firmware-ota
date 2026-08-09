@@ -339,7 +339,7 @@
               <MiscControls>--no-multibyte-chars</MiscControls>
               <Define>STM32F10X_HD, USE_STDPERIPH_DRIVER,DEBUG_APP</Define>
               <Undefine></Undefine>
-              <IncludePath>..\Libraries\CMSIS;..\Libraries\FWlib\inc;..;..\app;..\app;..\bsp;..\uc-cpu;..\uc-cpu\ARM-Cortex-M3\RealView;..\uc-lib;..\ucos-iii\Source;..\ucos-iii\Ports\ARM-Cortex-M3\Generic\RealView;..\Libraries\mbedtls\include</IncludePath>
+              <IncludePath>..\Libraries\CMSIS;..\Libraries\FWlib\inc;..;..\app;..\app;..\bsp;..\uc-cpu;..\uc-cpu\ARM-Cortex-M3\RealView;..\uc-lib;..\ucos-iii\Source;..\ucos-iii\Ports\ARM-Cortex-M3\Generic\RealView;..\Libraries\mbedtls\include;..\app\FatFs;..\app\sd_lib</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -632,6 +632,41 @@
               <FileName>device_secret.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\app\device_secret.c</FilePath>
+            </File>
+            <File>
+              <FileName>sd_spi.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\app\sd_lib\sd_spi.c</FilePath>
+            </File>
+            <File>
+              <FileName>sd_storage.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\app\sd_storage.c</FilePath>
+            </File>
+            <File>
+              <FileName>rtc.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\app\rtc.c</FilePath>
+            </File>
+            <File>
+              <FileName>ff.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\app\FatFs\ff.c</FilePath>
+            </File>
+            <File>
+              <FileName>diskio.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\app\FatFs\diskio.c</FilePath>
+            </File>
+            <File>
+              <FileName>ff_ucos3.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\app\FatFs\ff_ucos3.c</FilePath>
+            </File>
+            <File>
+              <FileName>ffunicode.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\app\FatFs\ffunicode.c</FilePath>
             </File>
           </Files>
         </Group>
@@ -1233,7 +1268,7 @@
               <MiscControls></MiscControls>
               <Define>STM32F10X_HD, USE_STDPERIPH_DRIVER,UPDATA_APP</Define>
               <Undefine></Undefine>
-              <IncludePath>..\Libraries\CMSIS;..\Libraries\FWlib\inc;..;..\app;..\app;..\bsp;..\uc-cpu;..\uc-cpu\ARM-Cortex-M3\RealView;..\uc-lib;..\ucos-iii\Source;..\ucos-iii\Ports\ARM-Cortex-M3\Generic\RealView;;..\Libraries\mbedtls\include</IncludePath>
+              <IncludePath>..\Libraries\CMSIS;..\Libraries\FWlib\inc;..;..\app;..\app;..\bsp;..\uc-cpu;..\uc-cpu\ARM-Cortex-M3\RealView;..\uc-lib;..\ucos-iii\Source;..\ucos-iii\Ports\ARM-Cortex-M3\Generic\RealView;;..\Libraries\mbedtls\include;..\app\FatFs;..\app\sd_lib</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -1526,6 +1561,41 @@
               <FileName>device_secret.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\app\device_secret.c</FilePath>
+            </File>
+            <File>
+              <FileName>sd_spi.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\app\sd_lib\sd_spi.c</FilePath>
+            </File>
+            <File>
+              <FileName>sd_storage.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\app\sd_storage.c</FilePath>
+            </File>
+            <File>
+              <FileName>rtc.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\app\rtc.c</FilePath>
+            </File>
+            <File>
+              <FileName>ff.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\app\FatFs\ff.c</FilePath>
+            </File>
+            <File>
+              <FileName>diskio.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\app\FatFs\diskio.c</FilePath>
+            </File>
+            <File>
+              <FileName>ff_ucos3.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\app\FatFs\ff_ucos3.c</FilePath>
+            </File>
+            <File>
+              <FileName>ffunicode.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\app\FatFs\ffunicode.c</FilePath>
             </File>
           </Files>
         </Group>
